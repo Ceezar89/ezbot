@@ -1,4 +1,4 @@
-
+namespace EzBot.Models;
 public class BarData
 {
     public double Open { get; set; }
