@@ -1,14 +1,21 @@
 using EzBot.Models;
 using EzBot.Core.Indicator;
 
-namespace EzBot.Indicators;
-public class EhlersTriangleMovingAverage : ITrendIndicator
+namespace EzBot.Core.Indicator;
+
+// EhlersTriangleMovingAverage
+public class ETMA : ITrendIndicator
 {
     private List<int> SignalEntryLongETMA = new List<int>();
     private List<int> SignalEntryShortETMA = new List<int>();
     private List<double> filtETMA = new List<double>();
     private List<double> sloETMA = new List<double>();
     private List<int> sigETMA = new List<int>();
+
+    public ETMA(int windowSize, double offset, double sigma)
+    {
+        // TODO: Implement constructor
+    }
 
     public void Calculate(List<BarData> bars)
     {
@@ -55,7 +62,7 @@ public class EhlersTriangleMovingAverage : ITrendIndicator
 
     }
 
-    public TrendSignal GetSignal()
+    public TrendSignal GetTrendSignal()
     {
         if (SignalEntryLongETMA.Last() == 1)
         {

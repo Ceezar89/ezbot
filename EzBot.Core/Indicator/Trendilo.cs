@@ -70,7 +70,7 @@ public class Trendilo : ITrendIndicator
         RmsValue = rmsList[idx];
     }
 
-    public TrendSignal GetSignal()
+    public TrendSignal GetTrendSignal()
     {
         if (AvpchValue > RmsValue)
         {

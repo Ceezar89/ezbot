@@ -33,7 +33,7 @@ public class NormalizedVolume : IVolumeIndicator
 
     }
 
-    public VolumeSignal GetSignal()
+    public VolumeSignal GetVolumeSignal()
     {
         if (nVolume >= HighVolumeThreshold)
         {

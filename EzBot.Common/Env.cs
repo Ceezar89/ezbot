@@ -1,6 +1,6 @@
 namespace EzBot.Common;
 
-public static class Constants
+public static class Env
 {
     public const string SYMBOL_BTC = "BTCUSDT";
     public const string SYMBOL_ETH = "ETHUSDT";

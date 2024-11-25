@@ -9,12 +9,12 @@ public interface IIndicator
 
 public interface IVolumeIndicator : IIndicator
 {
-    VolumeSignal GetSignal();
+    VolumeSignal GetVolumeSignal();
 }
 
 public interface ITrendIndicator : IIndicator
 {
-    TrendSignal GetSignal();
+    TrendSignal GetTrendSignal();
 }
 
 public interface IRiskManagementIndicator : IIndicator

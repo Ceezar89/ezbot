@@ -60,7 +60,7 @@ public static class MovingAverages
         return ema;
     }
 
-    // calculate Arnaud Legoux Moving Average
+    // Arnaud Legoux Moving Average
     public static List<double> ALMA(List<double> data, int windowSize, double offset, double sigma)
     {
         int count = data.Count;
