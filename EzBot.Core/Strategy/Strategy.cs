@@ -35,10 +35,12 @@ public abstract class Strategy(List<IIndicator> Indicators) : IStrategy
                     break;
             }
         }
-        TradeType action = ExecuteStrategy();
-        if (action == TradeType.Long) return new TradeOrder(TradeType.Long, LongStoploss);
-        else if (action == TradeType.Short) return new TradeOrder(TradeType.Short, ShortStoploss);
-        else return new TradeOrder(TradeType.None, -1);
+        return ExecuteStrategy() switch
+        {
+            TradeType.Long => new TradeOrder(TradeType.Long, LongStoploss),
+            TradeType.Short => new TradeOrder(TradeType.Short, ShortStoploss),
+            _ => new TradeOrder(TradeType.None, -1)
+        };
     }
 
     protected abstract TradeType ExecuteStrategy();
