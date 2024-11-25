@@ -14,10 +14,9 @@ public enum TrendSignal
     Neutral,
 }
 
-public enum ActionType
+public enum TradeType
 {
     Long,
     Short,
-    Close,
     None
 }

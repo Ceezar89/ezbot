@@ -1,24 +1,23 @@
+using EzBot.Core.Indicator;
 using EzBot.Models;
 
 namespace EzBot.Core.Strategy;
 
-public sealed class PrecisionTrend(List<IndicatorParameter> parameters) : Strategy(parameters), IStrategy
+public sealed class PrecisionTrend(List<IIndicator> Indicators) : Strategy(Indicators)
 {
-    public TradeOrder GetAction(List<BarData> bars)
+    protected override TradeType ExecuteStrategy()
     {
-        CalculateSignals(bars);
-
         if (TrendSignals.All(t => t == TrendSignal.Bullish) && VolumeSignals.All(v => v == VolumeSignal.High))
         {
-            return new TradeOrder(ActionType.Long, LongStoploss);
+            return TradeType.Long;
         }
         else if (TrendSignals.All(t => t == TrendSignal.Bearish) && VolumeSignals.All(v => v == VolumeSignal.High))
         {
-            return new TradeOrder(ActionType.Short, ShortStoploss);
+            return TradeType.Short;
         }
         else
         {
-            return new TradeOrder(ActionType.None, -1);
+            return TradeType.None;
         }
     }
 }

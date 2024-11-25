@@ -2,12 +2,12 @@ namespace EzBot.Models;
 
 public class TradeOrder
 {
-    public ActionType ActionType { get; set; }
+    public TradeType TradeType { get; set; }
     public double StopLoss { get; set; }
 
-    public TradeOrder(ActionType actionType, double stopLoss)
+    public TradeOrder(TradeType tradeType, double stopLoss)
     {
-        ActionType = actionType;
+        TradeType = tradeType;
         StopLoss = stopLoss;
     }
 
