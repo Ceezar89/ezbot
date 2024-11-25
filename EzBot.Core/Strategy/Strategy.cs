@@ -41,6 +41,8 @@ public abstract class Strategy
     {
         TrendSignals.Clear();
         VolumeSignals.Clear();
+        LongStoploss = -1;
+        ShortStoploss = -1;
 
         foreach (IIndicator indicator in Indicators)
         {
