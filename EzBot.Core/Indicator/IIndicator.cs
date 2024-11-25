@@ -19,5 +19,6 @@ public interface ITrendIndicator : IIndicator
 
 public interface IRiskManagementIndicator : IIndicator
 {
-    double GetStopLoss();
+    double GetLongStopLoss();
+    double GetShortStopLoss();
 }

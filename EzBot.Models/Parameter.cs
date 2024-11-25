@@ -1,6 +1,6 @@
 namespace EzBot.Models;
 
-public abstract class Parameter
+public abstract class IndicatorParameter
 {
     public required string Id { get; set; }
 

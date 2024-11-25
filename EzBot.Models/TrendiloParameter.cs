@@ -1,6 +1,6 @@
 namespace EzBot.Models;
 
-public class TrendiloParameter : Parameter
+public class TrendiloParameter : IndicatorParameter
 {
 
     public int SmoothTrending { get; set; }

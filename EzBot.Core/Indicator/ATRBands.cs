@@ -5,20 +5,20 @@ namespace EzBot.Core.Indicator;
 public class ATRBands : IRiskManagementIndicator
 {
     // Inputs
-    public int ATRPeriod { get; set; } = 14;
-    public double ATRMultiplierUpper { get; set; } = 2.0;
-    public double ATRMultiplierLower { get; set; } = 2.0;
+    private int ATRPeriod { get; set; } = 14;
+    private double ATRMultiplierUpper { get; set; } = 2.0;
+    private double ATRMultiplierLower { get; set; } = 2.0;
 
     // Data sources for upper and lower calculations
-    public List<double> SrcUpper { get; set; } = new List<double>();
-    public List<double> SrcLower { get; set; } = new List<double>();
+    private List<double> SrcUpper { get; set; } = new List<double>();
+    private List<double> SrcLower { get; set; } = new List<double>();
 
     // ATR values
     private List<double> ATRValues = new List<double>();
 
     // Upper and Lower Bands
-    public List<double> UpperBand = new List<double>();
-    public List<double> LowerBand = new List<double>();
+    private List<double> UpperBand = new List<double>();
+    private List<double> LowerBand = new List<double>();
 
     // Constructor
     public ATRBands(int atrPeriod = 14, double atrMultiplierUpper = 2.0, double atrMultiplierLower = 2.0)
@@ -111,8 +111,13 @@ public class ATRBands : IRiskManagementIndicator
         }
     }
 
-    public double GetStopLoss()
+    public double GetLongStopLoss()
     {
         return LowerBand.Last();
+    }
+
+    public double GetShortStopLoss()
+    {
+        return UpperBand.Last();
     }
 }

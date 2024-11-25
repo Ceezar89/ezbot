@@ -1,6 +1,6 @@
 namespace EzBot.Models;
 
-public class ETMAParameter : Parameter
+public class ETMAParameter : IndicatorParameter
 {
 
     public int WindowSize { get; set; }

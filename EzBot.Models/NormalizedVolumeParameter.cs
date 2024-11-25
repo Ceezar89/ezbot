@@ -1,6 +1,6 @@
 namespace EzBot.Models;
 
-public class NormalizedVolumeParameter : Parameter
+public class NormalizedVolumeParameter : IndicatorParameter
 {
     public int VolumePeriod { get; set; }
     public int HighVolume { get; set; }

@@ -1,6 +1,6 @@
 namespace EzBot.Models;
 
-public class ATRBandsParameter : Parameter
+public class ATRBandsParameter : IndicatorParameter
 {
     public int Period { get; set; }
     public double Multiplier { get; set; }
