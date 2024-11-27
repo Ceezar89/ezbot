@@ -1,5 +1,9 @@
 using Microsoft.FluentUI.AspNetCore.Components;
 using EzBot.UI.Components;
+using EzBot.Persistence;
+using Microsoft.EntityFrameworkCore;
+using EzBot.Persistence.Repositories;
+using EzBot.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +11,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddFluentUIComponents();
+
+// Register EzBotDbContext with SQLite
+builder.Services.AddDbContext<EzBotDbContext>(options =>
+    options.UseSqlite("Data Source=ezbot.db"));
+
+// Register repositories
+builder.Services.AddScoped<IExchangeApiKeyRepository, ExchangeApiKeyRepository>();
+
+// Register services
+builder.Services.AddScoped<DbService>();
 
 var app = builder.Build();
 
