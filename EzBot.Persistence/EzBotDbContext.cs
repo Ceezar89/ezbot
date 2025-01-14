@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using EzBot.Models;
+using EzBot.Models.SQL;
 
 namespace EzBot.Persistence;
 

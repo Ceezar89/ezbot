@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace EzBot.Models;
+namespace EzBot.Models.SQL;
 
 public class ExchangeApiKey
 {

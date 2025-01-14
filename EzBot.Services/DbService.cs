@@ -1,16 +1,11 @@
-using EzBot.Models;
+using EzBot.Models.SQL;
 using EzBot.Persistence.Repositories;
 
 namespace EzBot.Services;
 
-public class DbService
+public class DbService(ExchangeApiKeyRepository apiKeyRepository)
 {
-    private readonly ExchangeApiKeyRepository _apiKeyRepository;
-
-    public DbService(ExchangeApiKeyRepository apiKeyRepository)
-    {
-        _apiKeyRepository = apiKeyRepository;
-    }
+    private readonly ExchangeApiKeyRepository _apiKeyRepository = apiKeyRepository;
 
     public async Task AddApiKeyAsync(ExchangeApiKey apiKey)
     {

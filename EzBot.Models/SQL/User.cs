@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace EzBot.Models;
+namespace EzBot.Models.SQL;
 
 public class User
 {
@@ -11,6 +11,5 @@ public class User
     [MaxLength(100)]
     public required string Username { get; set; }
 
-    // Navigation property
     public ICollection<ExchangeApiKey> ExchangeApiKeys { get; set; } = [];
 }

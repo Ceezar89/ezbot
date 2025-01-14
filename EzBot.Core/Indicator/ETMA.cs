@@ -1,5 +1,4 @@
 using EzBot.Models;
-using EzBot.Core.Indicator;
 
 namespace EzBot.Core.Indicator;
 

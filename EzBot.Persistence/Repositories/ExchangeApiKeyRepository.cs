@@ -1,4 +1,4 @@
-using EzBot.Models;
+using EzBot.Models.SQL;
 using Microsoft.EntityFrameworkCore;
 
 namespace EzBot.Persistence.Repositories;

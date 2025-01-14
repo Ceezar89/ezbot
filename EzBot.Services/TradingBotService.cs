@@ -4,16 +4,10 @@ using EzBot.Core.TradingBot;
 
 namespace EzBot.Services;
 
-public class TradingBotService : IHostedService
+public class TradingBotService(ITradingBot tradingBot, ILogger<TradingBotService> logger) : IHostedService
 {
-    private readonly ITradingBot _tradingBot;
-    private readonly ILogger<TradingBotService> _logger;
-
-    public TradingBotService(ITradingBot tradingBot, ILogger<TradingBotService> logger)
-    {
-        _tradingBot = tradingBot;
-        _logger = logger;
-    }
+    private readonly ITradingBot _tradingBot = tradingBot;
+    private readonly ILogger<TradingBotService> _logger = logger;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {

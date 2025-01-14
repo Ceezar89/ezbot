@@ -1,12 +1,10 @@
 using System.Net.Sockets;
 
-namespace EzBot.Services;
+namespace EzBot.Common;
 
-public class NetworkService
+public static class NetworkUtility
 {
-    private readonly HttpClient _httpClient;
-
-    private async Task<bool> IsInternetAvailableAsync()
+    private static async Task<bool> IsInternetAvailableAsync()
     {
         try
         {
@@ -20,12 +18,7 @@ public class NetworkService
         }
     }
 
-    public NetworkService(HttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-
-    public async Task<HttpResponseMessage> MakeRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    public static async Task<HttpResponseMessage> MakeRequestAsync(HttpClient httpClient, HttpRequestMessage request, CancellationToken cancellationToken)
     {
         while (!await IsInternetAvailableAsync())
         {
@@ -34,6 +27,6 @@ public class NetworkService
             await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
         }
 
-        return await _httpClient.SendAsync(request, cancellationToken);
+        return await httpClient.SendAsync(request, cancellationToken);
     }
 }
