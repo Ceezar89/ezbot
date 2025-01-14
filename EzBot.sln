@@ -17,7 +17,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzBot.Common", "EzBot.Commo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzBot.Tests", "EzBot.Tests\EzBot.Tests.csproj", "{1F702358-D48B-441B-A645-1B5A83DFE207}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzBot.StrategyOptimizer", "EzBot.StrategyOptimizer\EzBot.StrategyOptimizer.csproj", "{08407308-9FA6-4C53-8155-9CE5D6FD7334}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzBot.Benchmark", "EzBot.Benchmark\EzBot.Benchmark.csproj", "{08407308-9FA6-4C53-8155-9CE5D6FD7334}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

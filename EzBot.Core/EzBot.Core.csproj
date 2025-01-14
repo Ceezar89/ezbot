@@ -1,9 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\EzBot.Persistence\EzBot.Persistence.csproj" />
     <ProjectReference Include="..\EzBot.Models\EzBot.Models.csproj" />
     <ProjectReference Include="..\EzBot.Common\EzBot.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
   </ItemGroup>
 
   <PropertyGroup>

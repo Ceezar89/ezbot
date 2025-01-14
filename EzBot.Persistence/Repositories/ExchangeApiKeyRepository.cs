@@ -1,17 +1,18 @@
 using EzBot.Models.SQL;
 using Microsoft.EntityFrameworkCore;
+using EzBot.Services;
 
 namespace EzBot.Persistence.Repositories;
 
-public class ExchangeApiKeyRepository(EzBotDbContext dbContext) : IExchangeApiKeyRepository
+public class ExchangeApiKeyRepository(EzBotDbContext dbContext, IEncryptionService encryptionService) : IExchangeApiKeyRepository
 {
     private readonly EzBotDbContext _dbContext = dbContext;
+    private readonly IEncryptionService _encryptionService = encryptionService;
 
     public async Task AddAsync(ExchangeApiKey apiKey)
     {
-        // TODO: Encrypt the API key and secret before saving to the database
-        // apiKey.ApiKey = Common.Encryption.Encrypt(apiKey.ApiKey);
-        // apiKey.ApiSecret = Common.Encryption.Encrypt(apiKey.ApiSecret);
+        apiKey.ApiKey = _encryptionService.Encrypt(apiKey.ApiKey);
+        apiKey.ApiSecret = _encryptionService.Encrypt(apiKey.ApiSecret);
         await _dbContext.ExchangeApiKeys.AddAsync(apiKey);
         await _dbContext.SaveChangesAsync();
     }
@@ -23,11 +24,11 @@ public class ExchangeApiKeyRepository(EzBotDbContext dbContext) : IExchangeApiKe
             .Include(apiKey => apiKey.User)
             .FirstOrDefaultAsync(apiKey => apiKey.Id == id);
 
-        // if (apiKey != null)
-        // {
-        //     apiKey.ApiKey = Common.Encryption.Decrypt(apiKey.ApiKey);
-        //     apiKey.ApiSecret = Common.Encryption.Decrypt(apiKey.ApiSecret);
-        // }
+        if (apiKey != null)
+        {
+            apiKey.ApiKey = _encryptionService.Decrypt(apiKey.ApiKey);
+            apiKey.ApiSecret = _encryptionService.Decrypt(apiKey.ApiSecret);
+        }
 
         return apiKey;
     }
@@ -39,11 +40,11 @@ public class ExchangeApiKeyRepository(EzBotDbContext dbContext) : IExchangeApiKe
             .Where(apiKey => apiKey.UserId == userId)
             .ToListAsync();
 
-        // foreach (var key in apiKeys)
-        // {
-        //     key.ApiKey = Common.Encryption.Decrypt(key.ApiKey);
-        //     key.ApiSecret = Common.Encryption.Decrypt(key.ApiSecret);
-        // }
+        foreach (var key in apiKeys)
+        {
+            key.ApiKey = _encryptionService.Decrypt(key.ApiKey);
+            key.ApiSecret = _encryptionService.Decrypt(key.ApiSecret);
+        }
 
         return apiKeys;
     }

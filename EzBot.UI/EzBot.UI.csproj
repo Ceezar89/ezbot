@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\EzBot.Core\EzBot.Core.csproj" />
     <ProjectReference Include="..\EzBot.Models\EzBot.Models.csproj" />
+    <ProjectReference Include="..\EzBot.Persistence\EzBot.Persistence.csproj" />
     <ProjectReference Include="..\EzBot.Services\EzBot.Services.csproj" />
     <ProjectReference Include="..\EzBot.Common\EzBot.Common.csproj" />
   </ItemGroup>

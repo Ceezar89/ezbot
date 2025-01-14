@@ -26,7 +26,7 @@ public class NormalizedVolume : IVolumeIndicator
         List<double> volumes = bars.Select(b => b.Volume).ToList();
 
         // Calculate SMA of volume
-        List<double> smaVolume = MovingAverages.SMA(volumes, Length);
+        List<double> smaVolume = MathUtility.SMA(volumes, Length);
 
         // Determine high, low, and normal volume. return sentiment for most recent bar
         nVolume = volumes.Last() / smaVolume.Last() * 100;

@@ -1,4 +1,3 @@
-// In EzBot.Persistence/Repositories/IExchangeApiKeyRepository.cs
 using EzBot.Models.SQL;
 
 namespace EzBot.Persistence.Repositories;

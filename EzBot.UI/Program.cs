@@ -2,12 +2,45 @@ using Microsoft.FluentUI.AspNetCore.Components;
 using EzBot.UI.Components;
 using EzBot.Persistence;
 using Microsoft.EntityFrameworkCore;
-using EzBot.Persistence.Repositories;
 using EzBot.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Read environment variables
+bool useEncryption = Environment.GetEnvironmentVariable("USE_ENCRYPTION")?.ToLower() == "true";
+string encryptionSecret = Environment.GetEnvironmentVariable("ENCRYPTION_SECRET") ?? string.Empty;
+
+// Validate secret length if encryption is enabled
+if (useEncryption)
+{
+    if (encryptionSecret.Length < 16)
+    {
+        throw new InvalidOperationException(
+            "Encryption secret must be at least 16 characters long. " +
+            "Please set ENCRYPTION_SECRET environment variable accordingly.");
+    }
+    else if (encryptionSecret.Length > 128)
+    {
+        throw new InvalidOperationException(
+            "Encryption secret cannot exceed 128 characters. " +
+            "Please set ENCRYPTION_SECRET environment variable accordingly.");
+    }
+}
+
+// Register Encryption service
+if (useEncryption)
+{
+    // Register the real encryption service
+    builder.Services.AddScoped<IEncryptionService>(_ =>
+        new EncryptionService(encryptionSecret));
+}
+else
+{
+    // Register the no-op encryption service
+    builder.Services.AddScoped<IEncryptionService, NoOpEncryptionService>();
+}
+
+// Add Razor services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddFluentUIComponents();
@@ -16,11 +49,6 @@ builder.Services.AddFluentUIComponents();
 builder.Services.AddDbContext<EzBotDbContext>(options =>
     options.UseSqlite("Data Source=ezbot.db"));
 
-// Register repositories
-builder.Services.AddScoped<IExchangeApiKeyRepository, ExchangeApiKeyRepository>();
-
-// Register services
-builder.Services.AddScoped<DbService>();
 
 var app = builder.Build();
 

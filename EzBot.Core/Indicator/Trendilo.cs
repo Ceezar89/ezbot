@@ -44,7 +44,7 @@ public class Trendilo : ITrendIndicator
             }
         }
 
-        List<double> avpch = MovingAverages.ALMA(PercentageChange, Lookback, AlmaOffset, AlmaSigma);
+        List<double> avpch = MathUtility.ALMA(PercentageChange, Lookback, AlmaOffset, AlmaSigma);
 
         List<double> rmsList = new List<double>();
         for (int i = 0; i < count; i++)

@@ -8,8 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EzBot.Core\EzBot.Core.csproj" />
-    <ProjectReference Include="..\EzBot.Models\EzBot.Models.csproj" />
+    <ProjectReference Include="..\EzBot.Services\EzBot.Services.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
   </ItemGroup>
 
 </Project>

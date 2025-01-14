@@ -1,11 +1,11 @@
 namespace EzBot.Common;
-public static class MovingAverages
+public static class MathUtility
 {
     // Simple Moving Average
     public static List<double> SMA(List<double> values, int period)
     {
         int count = values.Count;
-        List<double> sma = new List<double>(new double[count]);
+        List<double> sma = [.. new double[count]];
         double sum = 0.0;
 
         for (int i = 0; i < count; i++)
@@ -33,7 +33,7 @@ public static class MovingAverages
     public static List<double> EMA(List<double> values, int period)
     {
         int count = values.Count;
-        List<double> ema = new List<double>(new double[count]);
+        List<double> ema = [.. new double[count]];
         double multiplier = 2.0 / (period + 1);
         double sum = 0.0;
 
@@ -64,7 +64,7 @@ public static class MovingAverages
     public static List<double> ALMA(List<double> data, int windowSize, double offset, double sigma)
     {
         int count = data.Count;
-        List<double> alma = new List<double>(new double[count]);
+        List<double> alma = [.. new double[count]];
 
         double m = offset * (windowSize - 1);
         double s = windowSize / sigma;
