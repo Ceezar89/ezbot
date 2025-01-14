@@ -7,23 +7,25 @@ using EzBot.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Read environment variables
-bool useEncryption = Environment.GetEnvironmentVariable("USE_ENCRYPTION")?.ToLower() == "true";
-string encryptionSecret = Environment.GetEnvironmentVariable("ENCRYPTION_SECRET") ?? string.Empty;
+string encryptionSecret = Environment.GetEnvironmentVariable("EZBOT_ENCRYPTION_SECRET") ?? string.Empty;
+bool useEncryption = !string.IsNullOrEmpty(encryptionSecret);
 
-// Validate secret length if encryption is enabled
+// Validate if encryption secret is set correctly
 if (useEncryption)
 {
-    if (encryptionSecret.Length < 16)
+    if (encryptionSecret.Length < 32)
     {
         throw new InvalidOperationException(
-            "Encryption secret must be at least 16 characters long. " +
-            "Please set ENCRYPTION_SECRET environment variable accordingly.");
+            "Encryption secret must be at least 32 characters long. " +
+            "Please set the ENCRYPTION_SECRET as an environment variable accordingly. " +
+            "(you can use https://randomkeygen.com/ to generate a 256-bit WEP Keys for example.)");
     }
     else if (encryptionSecret.Length > 128)
     {
         throw new InvalidOperationException(
             "Encryption secret cannot exceed 128 characters. " +
-            "Please set ENCRYPTION_SECRET environment variable accordingly.");
+            "Please set the ENCRYPTION_SECRET as an environment variable accordingly." +
+            "(you can use https://randomkeygen.com/ to generate a 256-bit WEP Keys for example.)");
     }
 }
 
