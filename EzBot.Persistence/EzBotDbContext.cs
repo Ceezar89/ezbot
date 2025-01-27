@@ -5,8 +5,8 @@ namespace EzBot.Persistence;
 
 public class EzBotDbContext(DbContextOptions<EzBotDbContext> options) : DbContext(options)
 {
-    public required DbSet<User> Users { get; set; }
-    public required DbSet<ExchangeApiKey> ExchangeApiKeys { get; set; }
+    public DbSet<User> Users { get; set; }
+    public DbSet<ExchangeApiKey> ExchangeApiKeys { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

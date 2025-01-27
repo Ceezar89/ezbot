@@ -49,16 +49,25 @@ builder.Services.AddFluentUIComponents();
 
 // Register EzBotDbContext with SQLite
 builder.Services.AddDbContext<EzBotDbContext>(options =>
-    options.UseSqlite("Data Source=ezbot.db"));
-
+{
+    // Use the helper to get the connection string
+    string connString = DbContextConnectionHelper.GetSqliteConnectionString();
+    options.UseSqlite(connString);
+});
 
 var app = builder.Build();
+
+// Migrate database at startup (optional)
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<EzBotDbContext>();
+    db.Database.Migrate();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
