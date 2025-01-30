@@ -1,6 +1,7 @@
 using EzBot.Models;
 using EzBot.Common;
 using System.Text.Json;
+using EzBot.Services.DTO;
 
 namespace EzBot.Services;
 
@@ -10,26 +11,7 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
     private readonly IExchangeAdapter _adapter = new BinanceAdapter();
     public static ExchangeName ExchangeName => ExchangeName.BINANCE;
 
-    /*
-    Binance API response format for futures candlestick data
-    https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
-    [
-        [
-            1499040000000,      // Open time
-            "0.01634790",       // Open
-            "0.80000000",       // High
-            "0.01575800",       // Low
-            "0.01577100",       // Close
-            "148976.11427815",  // Volume
-            1499644799999,      // Close time
-            "2434.19055334",    // Quote asset volume
-            308,                // Number of trades
-            "1756.87402397",    // Taker buy base asset volume
-            "28.46694368",      // Taker buy quote asset volume
-            "17928899.62484339" // Ignore.
-        ]
-    ]
-    */
+    // https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
     public async Task<List<BarData>> GetBarDataAsync(CoinPair symbol, Interval interval, CancellationToken cancellationToken)
     {
         var request = new HttpRequestMessage
@@ -42,22 +24,19 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
 
         if (response.IsSuccessStatusCode)
         {
-            using JsonDocument document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
-            JsonElement root = document.RootElement;
-            var barDataList = new List<BarData>();
-            foreach (JsonElement candle in root.EnumerateArray())
+            var klines = await JsonSerializer.DeserializeAsync<List<BinanceKlineResponse>>(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                cancellationToken: cancellationToken);
+
+            return klines?.Select(k => new BarData
             {
-                barDataList.Add(new BarData
-                {
-                    TimeStamp = candle[0].GetInt32(),
-                    Open = candle[1].GetDouble(),
-                    High = candle[2].GetDouble(),
-                    Low = candle[3].GetDouble(),
-                    Close = candle[4].GetDouble(),
-                    Volume = candle[5].GetDouble()
-                });
-            }
-            return barDataList;
+                TimeStamp = (int)k.OpenTime,
+                Open = double.Parse(k.Open),
+                High = double.Parse(k.High),
+                Low = double.Parse(k.Low),
+                Close = double.Parse(k.Close),
+                Volume = double.Parse(k.Volume)
+            }).ToList() ?? [];
         }
         throw new HttpRequestException($"Failed to retrieve bar data from Binance: {response.StatusCode}");
     }
