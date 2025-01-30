@@ -12,7 +12,7 @@ public static class NetworkUtility
             sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
             onRetry: (outcome, timespan, retryAttempt, context) =>
             {
-                // Log the retry attempt
+                // TODO: Log the retry attempt
                 Console.WriteLine($"Retrying... Attempt {retryAttempt}");
             });
 
