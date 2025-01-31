@@ -1,7 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace EzBot.Services;
+namespace EzBot.Services.Encryption;
+
 public class EncryptionService(string encryptionSecret) : IEncryptionService
 {
     private readonly byte[] _key = SHA256.HashData(Encoding.UTF8.GetBytes(encryptionSecret));

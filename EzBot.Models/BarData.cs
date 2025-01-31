@@ -1,8 +1,8 @@
 namespace EzBot.Models;
-public class BarData(int timestamp, double open, double high, double low, double close, double volume)
+public class BarData(long timestamp, double open, double high, double low, double close, double volume)
 {
     // unix timestamp as int
-    public int TimeStamp { get; set; } = timestamp;
+    public long TimeStamp { get; set; } = timestamp;
     public double Open { get; set; } = open;
     public double High { get; set; } = high;
     public double Low { get; set; } = low;

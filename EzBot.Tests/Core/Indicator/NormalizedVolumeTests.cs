@@ -11,9 +11,9 @@ public class NormalizedVolumeTests
     {
         // Arrange
         // 50 bars all with volume=1 
-        var bars = Enumerable.Repeat(new BarData(0, 0, 0, 0, 1), 50).ToList();
+        var bars = Enumerable.Repeat(new BarData(0, 0, 0, 0, 0, 1), 50).ToList();
         // Then last bar with volume=2
-        bars.Add(new BarData(0, 0, 0, 0, 2));
+        bars.Add(new BarData(0, 0, 0, 0, 0, 2));
 
         var indicator = new NormalizedVolume(); // length=50, hv=150, lv=75, nv=100
 

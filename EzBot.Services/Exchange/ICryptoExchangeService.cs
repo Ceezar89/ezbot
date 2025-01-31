@@ -1,6 +1,6 @@
 using EzBot.Models;
 
-namespace EzBot.Services;
+namespace EzBot.Services.Exchange;
 
 public interface ICryptoExchangeService
 {

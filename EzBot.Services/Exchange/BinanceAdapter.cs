@@ -1,6 +1,6 @@
 using EzBot.Models;
 
-namespace EzBot.Services;
+namespace EzBot.Services.Exchange;
 
 public class BinanceAdapter : IExchangeAdapter
 {
@@ -27,5 +27,7 @@ public class BinanceAdapter : IExchangeAdapter
 
     public string GetBaseUrl() => "https://fapi.binance.com";
     public string GetKlineEndpoint() => "/fapi/v1/klines";
+
+    // TODO: Implement trade endpoint
     // public string GetTradeEndpoint() => "/fapi/v1/order";
 }

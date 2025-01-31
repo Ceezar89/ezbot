@@ -1,6 +1,6 @@
 using EzBot.Models;
 
-namespace EzBot.Services;
+namespace EzBot.Services.Exchange;
 
 public class MexcAdapter : IExchangeAdapter
 {
@@ -26,6 +26,8 @@ public class MexcAdapter : IExchangeAdapter
     };
 
     public string GetBaseUrl() => "https://contract.mexc.com";
-    public string GetKlineEndpoint() => "/api/v3/kline/";
+    public string GetKlineEndpoint() => "/api/v1/contract/kline/";
+
+    // TODO: Implement trade endpoint
     // public string GetTradeEndpoint() => "/api/v3/order";
 }
