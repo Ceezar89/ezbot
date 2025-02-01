@@ -2,7 +2,7 @@ using Microsoft.FluentUI.AspNetCore.Components;
 using EzBot.UI.Components;
 using EzBot.Persistence;
 using Microsoft.EntityFrameworkCore;
-using EzBot.Services;
+using EzBot.Services.Encryption;
 
 var builder = WebApplication.CreateBuilder(args);
 

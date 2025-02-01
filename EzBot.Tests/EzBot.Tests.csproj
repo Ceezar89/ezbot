@@ -30,4 +30,16 @@
     <ProjectReference Include="..\EzBot.Common\EzBot.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Services\Inputs\binance_response.json">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Services\Inputs\mexc_response.json">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

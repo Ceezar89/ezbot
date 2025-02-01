@@ -2,14 +2,13 @@ using EzBot.Models;
 using EzBot.Common;
 using System.Text.Json;
 using EzBot.Services.DTO;
-using System.Globalization;
 
 namespace EzBot.Services.Exchange;
 
 public class MexcExchangeService(HttpClient httpClient) : ICryptoExchangeService
 {
     private readonly HttpClient _httpClient = httpClient;
-    private readonly IExchangeAdapter _adapter = new MexcAdapter();
+    private readonly MexcAdapter _adapter = new();
     public static ExchangeName ExchangeName => ExchangeName.MEXC;
 
     // https://mexcdevelop.github.io/apidocs/contract_v1_en/#k-line-data
@@ -18,7 +17,7 @@ public class MexcExchangeService(HttpClient httpClient) : ICryptoExchangeService
         var request = new HttpRequestMessage
         {
             Method = HttpMethod.Get,
-            RequestUri = new Uri($"{_adapter.GetBaseUrl()}{_adapter.GetKlineEndpoint()}{_adapter.MapSymbol(symbol)}?interval={_adapter.MapInterval(interval)}"),
+            RequestUri = new Uri(_adapter.GetKlineRequestUri(symbol, interval))
         };
 
         var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);

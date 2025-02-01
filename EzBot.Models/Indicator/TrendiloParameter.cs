@@ -1,21 +1,26 @@
 namespace EzBot.Models.Indicator;
-public class TrendiloParameter : IndicatorParameterBase
+public class TrendiloParameter : IIndicatorParameter
 {
+    public string Id { get; set; }
+    public int Smoothing { get; set; } = 1;
+    public int Lookback { get; set; } = 50;
+    public double AlmaOffset { get; set; } = 0.85;
+    public int AlmaSigma { get; set; } = 6;
+    public double BandMultiplier { get; set; } = 1.0;
 
-    public int SmoothTrending { get; set; }
-    public int Lookback { get; set; }
-    public double AlmaOffsetTrend { get; set; }
-    public int AlmaSigma { get; set; }
-    public double BandMultiplier { get; set; }
-
-    public TrendiloParameter(string id, int smoothTrending, int lookback, double almaOffsetTrend, int almaSigma, double bandMultiplier)
+    public TrendiloParameter(string id, int smoothing, int lookback, double almaOffset, int almaSigma, double bandMultiplier)
     {
         Id = id;
-        SmoothTrending = smoothTrending;
+        Smoothing = smoothing;
         Lookback = lookback;
-        AlmaOffsetTrend = almaOffsetTrend;
+        AlmaOffset = almaOffset;
         AlmaSigma = almaSigma;
         BandMultiplier = bandMultiplier;
+    }
+
+    public TrendiloParameter(string id)
+    {
+        Id = id;
     }
 
 }

@@ -1,6 +1,7 @@
+using System.Data.Common;
 using EzBot.Core.Indicator;
 using EzBot.Models;
-using Xunit;
+using EzBot.Models.Indicator;
 
 namespace EzBot.Tests.Core.Indicator;
 
@@ -15,8 +16,7 @@ public class NormalizedVolumeTests
         // Then last bar with volume=2
         bars.Add(new BarData(0, 0, 0, 0, 0, 2));
 
-        var indicator = new NormalizedVolume(); // length=50, hv=150, lv=75, nv=100
-
+        var indicator = new NormalizedVolume(new NormalizedVolumeParameter("test"));
         // Act
         indicator.Calculate(bars);
         var result = indicator.GetVolumeSignal();
@@ -37,7 +37,7 @@ public class NormalizedVolumeTests
         var bars = Enumerable.Repeat(new BarData { Volume = 100 }, 50).ToList();
         bars.Add(new BarData { Volume = 120 });
 
-        var indicator = new NormalizedVolume();
+        var indicator = new NormalizedVolume(new NormalizedVolumeParameter("test"));
 
         // Act
         indicator.Calculate(bars);
@@ -57,7 +57,7 @@ public class NormalizedVolumeTests
         var bars = Enumerable.Repeat(new BarData { Volume = 100 }, 50).ToList();
         bars.Add(new BarData { Volume = 50 });
 
-        var indicator = new NormalizedVolume();
+        var indicator = new NormalizedVolume(new NormalizedVolumeParameter("test"));
 
         // Act
         indicator.Calculate(bars);
@@ -78,7 +78,7 @@ public class NormalizedVolumeTests
         var bars = Enumerable.Repeat(new BarData { Volume = 100 }, 50).ToList();
         bars.Add(new BarData { Volume = 101 });
 
-        var indicator = new NormalizedVolume();
+        var indicator = new NormalizedVolume(new NormalizedVolumeParameter("test"));
 
         // Act
         indicator.Calculate(bars);

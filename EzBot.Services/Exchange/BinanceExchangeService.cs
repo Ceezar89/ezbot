@@ -8,7 +8,7 @@ namespace EzBot.Services.Exchange;
 public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeService
 {
     private readonly HttpClient _httpClient = httpClient;
-    private readonly IExchangeAdapter _adapter = new BinanceAdapter();
+    private readonly BinanceAdapter _adapter = new();
     public static ExchangeName ExchangeName => ExchangeName.BINANCE;
 
     // https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
@@ -17,7 +17,7 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
         var request = new HttpRequestMessage
         {
             Method = HttpMethod.Get,
-            RequestUri = new Uri($"{_adapter.GetBaseUrl()}{_adapter.GetKlineEndpoint()}?symbol={_adapter.MapSymbol(symbol)}&interval={_adapter.MapInterval(interval)}"),
+            RequestUri = new Uri(_adapter.GetKlineRequestUri(symbol, interval))
         };
 
         var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);

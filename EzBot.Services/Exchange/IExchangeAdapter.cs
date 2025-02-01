@@ -1,11 +1,8 @@
 using EzBot.Models;
 
-namespace EzBot.Services;
+namespace EzBot.Services.Exchange;
+
 public interface IExchangeAdapter
 {
-    string MapSymbol(CoinPair symbol);
-    string MapInterval(Interval interval);
-    string GetBaseUrl();
-    string GetKlineEndpoint();
-    // string GetTradeEndpoint();
+    string GetKlineRequestUri(CoinPair symbol, Interval interval);
 }

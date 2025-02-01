@@ -20,3 +20,10 @@ public enum TradeType
     Short,
     None
 }
+
+public enum SignalStrength
+{
+    VeryStrong,
+    Strong,
+    Signal
+}

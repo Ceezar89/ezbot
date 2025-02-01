@@ -7,6 +7,12 @@ public sealed class PrecisionTrend(List<IIndicator> Indicators) : Strategy(Indic
 {
     protected override TradeType ExecuteStrategy()
     {
+        // Trade Strategy:
+        // Only open trades if there is strong volume
+        // If all indicators are bullish and volume is high, go long
+        // If all indicators are bearish and volume is high, go short
+        // Otherwise, do not trade
+
         if (TrendSignals.All(t => t == TrendSignal.Bullish) && VolumeSignals.All(v => v == VolumeSignal.High))
         {
             return TradeType.Long;
