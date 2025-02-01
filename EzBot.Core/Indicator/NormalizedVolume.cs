@@ -1,24 +1,17 @@
 using EzBot.Common;
 using EzBot.Models;
+using EzBot.Models.Indicator;
 
 namespace EzBot.Core.Indicator;
 
-public class NormalizedVolume : IVolumeIndicator
+public class NormalizedVolume(NormalizedVolumeParameter parameter) : IVolumeIndicator
 {
     // Inputs
-    private int Length { get; set; }
-    private int HighVolumeThreshold { get; set; }
-    private int LowVolumeThreshold { get; set; }
-    private int NormalVolumeThreshold { get; set; }
-    private double nVolume { get; set; }
-    // Constructor
-    public NormalizedVolume(int length = 50, int hv = 150, int lv = 75, int nv = 100)
-    {
-        Length = length;
-        HighVolumeThreshold = hv;
-        LowVolumeThreshold = lv;
-        NormalVolumeThreshold = nv;
-    }
+    private int Length { get; set; } = parameter.VolumePeriod;
+    private int HighVolumeThreshold { get; set; } = parameter.HighVolume;
+    private int LowVolumeThreshold { get; set; } = parameter.LowVolume;
+    private int NormalVolumeThreshold { get; set; } = parameter.NormalHighVolumeRange;
+    private double NVolume { get; set; }
 
     public void Calculate(List<BarData> bars)
     {
@@ -29,21 +22,21 @@ public class NormalizedVolume : IVolumeIndicator
         List<double> smaVolume = MathUtility.SMA(volumes, Length);
 
         // Determine high, low, and normal volume. return sentiment for most recent bar
-        nVolume = volumes.Last() / smaVolume.Last() * 100;
+        NVolume = volumes.Last() / smaVolume.Last() * 100;
 
     }
 
     public VolumeSignal GetVolumeSignal()
     {
-        if (nVolume >= HighVolumeThreshold)
+        if (NVolume >= HighVolumeThreshold)
         {
             return VolumeSignal.High;
         }
-        else if (nVolume > NormalVolumeThreshold && nVolume < HighVolumeThreshold)
+        else if (NVolume > NormalVolumeThreshold && NVolume < HighVolumeThreshold)
         {
             return VolumeSignal.Normal;
         }
-        else if (nVolume <= LowVolumeThreshold)
+        else if (NVolume <= LowVolumeThreshold)
         {
             return VolumeSignal.Low;
         }

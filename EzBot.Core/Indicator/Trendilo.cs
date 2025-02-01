@@ -1,41 +1,31 @@
 using EzBot.Common;
 using EzBot.Models;
+using EzBot.Models.Indicator;
 
 namespace EzBot.Core.Indicator;
 
-public class Trendilo : ITrendIndicator
+public class Trendilo(TrendiloParameter parameter) : ITrendIndicator
 {
-    // Inputs
-    private int Smooth { get; set; }
-    private int Lookback { get; set; }
-    private double AlmaOffset { get; set; }
-    private int AlmaSigma { get; set; }
-    private double BandMultiplier { get; set; }
+    private int Smoothing { get; set; } = parameter.Smoothing;
+    private int Lookback { get; set; } = parameter.Lookback;
+    private double AlmaOffset { get; set; } = parameter.AlmaOffset;
+    private int AlmaSigma { get; set; } = parameter.AlmaSigma;
+    private double BandMultiplier { get; set; } = parameter.BandMultiplier;
     private double AvpchValue { get; set; }
     private double RmsValue { get; set; }
-
-    // Constructor
-    public Trendilo(int smooth = 1, int lookback = 50, double alma_offset = 0.85, int alma_sigma = 6, double bmult = 1.0)
-    {
-        Smooth = smooth;
-        Lookback = lookback;
-        AlmaOffset = alma_offset;
-        AlmaSigma = alma_sigma;
-        BandMultiplier = bmult;
-    }
 
     public void Calculate(List<BarData> bars)
     {
         List<double> src = bars.Select(b => b.Close).ToList();
         int count = src.Count;
 
-        // Calculate percent change over 'smooth' periods
+        // Calculate percent change over 'Smoothing' periods
         List<double> PercentageChange = new List<double>();
         for (int i = 0; i < count; i++)
         {
-            if (i >= Smooth)
+            if (i >= Smoothing)
             {
-                double change = (src[i] - src[i - Smooth]) / src[i - Smooth] * 100;
+                double change = (src[i] - src[i - Smoothing]) / src[i - Smoothing] * 100;
                 PercentageChange.Add(change);
             }
             else

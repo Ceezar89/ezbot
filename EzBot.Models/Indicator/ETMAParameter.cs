@@ -1,19 +1,21 @@
 namespace EzBot.Models.Indicator;
 
-public class ETMAParameter : IndicatorParameterBase
+public class EtmaParameter : IIndicatorParameter
 {
+    public string Id { get; set; }
+    public int Lenght { get; set; } = 14;
+    public SignalStrength SignalStrength { get; set; } = SignalStrength.VeryStrong;
 
-    public int WindowSize { get; set; }
-    public double Offset { get; set; }
-    public double Sigma { get; set; }
-
-
-    public ETMAParameter(string id, int windowSize, double offset, double sigma)
+    public EtmaParameter(string id, int length, SignalStrength signalStrength)
     {
         Id = id;
-        WindowSize = windowSize;
-        Offset = offset;
-        Sigma = sigma;
+        Lenght = length;
+        SignalStrength = signalStrength;
+    }
+
+    public EtmaParameter(string id)
+    {
+        Id = id;
     }
 
 }

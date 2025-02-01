@@ -1,11 +1,12 @@
 namespace EzBot.Models.Indicator;
 
-public class NormalizedVolumeParameter : IndicatorParameterBase
+public class NormalizedVolumeParameter : IIndicatorParameter
 {
-    public int VolumePeriod { get; set; }
-    public int HighVolume { get; set; }
-    public int LowVolume { get; set; }
-    public int NormalHighVolumeRange { get; set; }
+    public string Id { get; set; }
+    public int VolumePeriod { get; set; } = 50;
+    public int HighVolume { get; set; } = 150;
+    public int LowVolume { get; set; } = 75;
+    public int NormalHighVolumeRange { get; set; } = 100;
 
     public NormalizedVolumeParameter(string id, int volumePeriod, int highVolume, int lowVolume, int normalHighVolumeRange)
     {
@@ -14,5 +15,10 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
         HighVolume = highVolume;
         LowVolume = lowVolume;
         NormalHighVolumeRange = normalHighVolumeRange;
+    }
+
+    public NormalizedVolumeParameter(string id)
+    {
+        Id = id;
     }
 }

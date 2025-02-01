@@ -1,5 +1,5 @@
 using BenchmarkDotNet.Attributes;
-using EzBot.Services;
+using EzBot.Services.Encryption;
 
 [MemoryDiagnoser]
 public class EncryptionServiceBenchmark

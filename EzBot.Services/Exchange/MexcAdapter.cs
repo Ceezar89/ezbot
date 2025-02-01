@@ -4,7 +4,9 @@ namespace EzBot.Services.Exchange;
 
 public class MexcAdapter : IExchangeAdapter
 {
-    public string MapSymbol(CoinPair symbol) => symbol switch
+    private string BaseUrl { get; set; } = "https://contract.mexc.com";
+    private string KlineEndpoint { get; set; } = "/api/v1/contract/kline/";
+    private static string MapSymbol(CoinPair symbol) => symbol switch
     {
         CoinPair.BTCUSDT => "BTC_USDT",
         CoinPair.ETHUSDT => "ETH_USDT",
@@ -13,7 +15,7 @@ public class MexcAdapter : IExchangeAdapter
         _ => throw new ArgumentOutOfRangeException(nameof(symbol))
     };
 
-    public string MapInterval(Interval interval) => interval switch
+    private static string MapInterval(Interval interval) => interval switch
     {
         Interval.OneMinute => "Min1",
         Interval.ThreeMinutes => "Min3",
@@ -25,8 +27,9 @@ public class MexcAdapter : IExchangeAdapter
         _ => throw new ArgumentOutOfRangeException(nameof(interval))
     };
 
-    public string GetBaseUrl() => "https://contract.mexc.com";
-    public string GetKlineEndpoint() => "/api/v1/contract/kline/";
+    public string GetKlineRequestUri(CoinPair symbol, Interval interval) =>
+        $"{BaseUrl}{KlineEndpoint}{MapSymbol(symbol)}?interval={MapInterval(interval)}";
+
 
     // TODO: Implement trade endpoint
     // public string GetTradeEndpoint() => "/api/v3/order";

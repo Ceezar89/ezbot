@@ -1,14 +1,22 @@
 namespace EzBot.Models.Indicator;
 
-public class ATRBandsParameter : IndicatorParameterBase
+public class AtrBandsParameter : IIndicatorParameter
 {
-    public int Period { get; set; }
-    public double Multiplier { get; set; }
+    public string Id { get; set; }
+    public int Period { get; set; } = 14;
+    public double MultiplierUpper { get; set; } = 2.0;
+    public double MultiplierLower { get; set; } = 2.0;
 
-    public ATRBandsParameter(string id, int period, double multiplier)
+    public AtrBandsParameter(string id, int period, double multiplierUpper, double multiplierLower)
     {
         Id = id;
         Period = period;
-        Multiplier = multiplier;
+        MultiplierUpper = multiplierUpper;
+        MultiplierLower = multiplierLower;
+    }
+
+    public AtrBandsParameter(string id)
+    {
+        Id = id;
     }
 }

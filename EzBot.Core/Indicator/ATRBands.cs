@@ -1,32 +1,25 @@
 using EzBot.Models;
+using EzBot.Models.Indicator;
 
 namespace EzBot.Core.Indicator;
 
-public class ATRBands : IRiskManagementIndicator
+public class AtrBands(AtrBandsParameter parameter) : IRiskManagementIndicator
 {
     // Inputs
-    private int ATRPeriod { get; set; } = 14;
-    private double ATRMultiplierUpper { get; set; } = 2.0;
-    private double ATRMultiplierLower { get; set; } = 2.0;
+    private int ATRPeriod { get; set; } = parameter.Period;
+    private double ATRMultiplierUpper { get; set; } = parameter.MultiplierUpper;
+    private double ATRMultiplierLower { get; set; } = parameter.MultiplierLower;
 
     // Data sources for upper and lower calculations
-    private List<double> SrcUpper { get; set; } = new List<double>();
-    private List<double> SrcLower { get; set; } = new List<double>();
+    private List<double> SrcUpper { get; set; } = [];
+    private List<double> SrcLower { get; set; } = [];
 
     // ATR values
-    private List<double> ATRValues = new List<double>();
+    private List<double> ATRValues = [];
 
     // Upper and Lower Bands
-    private List<double> UpperBand = new List<double>();
-    private List<double> LowerBand = new List<double>();
-
-    // Constructor
-    public ATRBands(int atrPeriod = 14, double atrMultiplierUpper = 2.0, double atrMultiplierLower = 2.0)
-    {
-        ATRPeriod = atrPeriod;
-        ATRMultiplierUpper = atrMultiplierUpper;
-        ATRMultiplierLower = atrMultiplierLower;
-    }
+    private List<double> UpperBand = [];
+    private List<double> LowerBand = [];
 
     // Method to calculate ATR Bands
     public void Calculate(List<BarData> bars)
@@ -40,9 +33,9 @@ public class ATRBands : IRiskManagementIndicator
         }
 
         // Initialize lists
-        ATRValues = new List<double>(new double[count]);
-        UpperBand = new List<double>(new double[count]);
-        LowerBand = new List<double>(new double[count]);
+        ATRValues = [.. new double[count]];
+        UpperBand = [.. new double[count]];
+        LowerBand = [.. new double[count]];
 
         // If SrcUpper and SrcLower are not provided, default to close prices
         if (SrcUpper.Count == 0)
@@ -62,7 +55,7 @@ public class ATRBands : IRiskManagementIndicator
         }
 
         // Calculate True Range (TR) and ATR
-        List<double> trueRange = new List<double>();
+        List<double> trueRange = [];
 
         for (int i = 0; i < count; i++)
         {

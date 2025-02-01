@@ -4,7 +4,9 @@ namespace EzBot.Services.Exchange;
 
 public class BinanceAdapter : IExchangeAdapter
 {
-    public string MapSymbol(CoinPair symbol) => symbol switch
+    private string BaseUrl { get; set; } = "https://fapi.binance.com";
+    private string KlineEndpoint { get; set; } = "/fapi/v1/klines";
+    private static string MapSymbol(CoinPair symbol) => symbol switch
     {
         CoinPair.BTCUSDT => "BTCUSDT",
         CoinPair.ETHUSDT => "ETHUSDT",
@@ -13,7 +15,7 @@ public class BinanceAdapter : IExchangeAdapter
         _ => throw new ArgumentOutOfRangeException(nameof(symbol))
     };
 
-    public string MapInterval(Interval interval) => interval switch
+    private static string MapInterval(Interval interval) => interval switch
     {
         Interval.OneMinute => "1m",
         Interval.ThreeMinutes => "3m",
@@ -25,8 +27,9 @@ public class BinanceAdapter : IExchangeAdapter
         _ => throw new ArgumentOutOfRangeException(nameof(interval))
     };
 
-    public string GetBaseUrl() => "https://fapi.binance.com";
-    public string GetKlineEndpoint() => "/fapi/v1/klines";
+    public string GetKlineRequestUri(CoinPair symbol, Interval interval) =>
+        $"{BaseUrl}{KlineEndpoint}?symbol={MapSymbol(symbol)}&interval={MapInterval(interval)}";
+
 
     // TODO: Implement trade endpoint
     // public string GetTradeEndpoint() => "/fapi/v1/order";
