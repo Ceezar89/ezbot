@@ -4,7 +4,7 @@ using EzBot.Models.Indicator;
 namespace EzBot.Core.Indicator;
 
 // EhlersTriangleMovingAverage
-public class ETMA(EtmaParameter parameter) : ITrendIndicator
+public class Etma(EtmaParameter parameter) : ITrendIndicator
 {
     private readonly int _lengthETMA = parameter.Lenght;
     private readonly SignalStrength _signalStrength = parameter.SignalStrength;
