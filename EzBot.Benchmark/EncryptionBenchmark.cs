@@ -1,4 +1,5 @@
 using BenchmarkDotNet.Attributes;
+using EzBot.Common.Interfaces;
 using EzBot.Services.Encryption;
 
 [MemoryDiagnoser]

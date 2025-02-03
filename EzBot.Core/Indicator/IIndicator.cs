@@ -1,9 +1,11 @@
 using EzBot.Models;
+using EzBot.Models.Indicator;
 
 namespace EzBot.Core.Indicator;
 
 public interface IIndicator
 {
+    void UpdateParameters(IIndicatorParameter parameter);
     void Calculate(List<BarData> bars);
 }
 

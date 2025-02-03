@@ -1,6 +1,6 @@
 using EzBot.Models.SQL;
 using Microsoft.EntityFrameworkCore;
-using EzBot.Services.Encryption;
+using EzBot.Common.Interfaces;
 
 namespace EzBot.Persistence.Repositories;
 

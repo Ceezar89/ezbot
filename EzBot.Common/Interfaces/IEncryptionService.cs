@@ -1,4 +1,6 @@
-namespace EzBot.Services.Encryption;
+using System;
+
+namespace EzBot.Common.Interfaces;
 
 public interface IEncryptionService
 {

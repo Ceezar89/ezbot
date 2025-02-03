@@ -3,6 +3,7 @@ using EzBot.UI.Components;
 using EzBot.Persistence;
 using Microsoft.EntityFrameworkCore;
 using EzBot.Services.Encryption;
+using EzBot.Common.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 

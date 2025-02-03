@@ -1,8 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <ProjectReference Include="..\EzBot.Services\EzBot.Services.csproj" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
@@ -15,6 +12,12 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\EzBot.Common\EzBot.Common.csproj" />
+    <ProjectReference Include="..\EzBot.Models\EzBot.Models.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

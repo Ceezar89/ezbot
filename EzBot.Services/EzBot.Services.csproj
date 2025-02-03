@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\EzBot.Core\EzBot.Core.csproj" />
     <ProjectReference Include="..\EzBot.Models\EzBot.Models.csproj" />
+    <ProjectReference Include="..\EzBot.Persistence\EzBot.Persistence.csproj" />
   </ItemGroup>
 
   <ItemGroup>

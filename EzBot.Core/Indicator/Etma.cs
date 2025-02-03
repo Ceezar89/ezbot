@@ -6,14 +6,21 @@ namespace EzBot.Core.Indicator;
 // EhlersTriangleMovingAverage
 public class Etma(EtmaParameter parameter) : ITrendIndicator
 {
-    private readonly int _lengthETMA = parameter.Lenght;
-    private readonly SignalStrength _signalStrength = parameter.SignalStrength;
+    private int _lengthETMA = parameter.Lenght;
+    private SignalStrength _signalStrength = parameter.SignalStrength;
 
     private readonly List<int> _signalEntryLongETMA = [];
     private readonly List<int> _signalEntryShortETMA = [];
     private readonly List<double> _filtETMA = [];
     private readonly List<double> _sloETMA = [];
     private readonly List<int> _sigETMA = [];
+
+    public void UpdateParameters(IIndicatorParameter parameter)
+    {
+        EtmaParameter param = (EtmaParameter)parameter;
+        _lengthETMA = param.Lenght;
+        _signalStrength = param.SignalStrength;
+    }
 
     public void Calculate(List<BarData> bars)
     {

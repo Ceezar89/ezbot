@@ -13,6 +13,15 @@ public class NormalizedVolume(NormalizedVolumeParameter parameter) : IVolumeIndi
     private int NormalVolumeThreshold { get; set; } = parameter.NormalHighVolumeRange;
     private double NVolume { get; set; }
 
+    public void UpdateParameters(IIndicatorParameter parameter)
+    {
+        NormalizedVolumeParameter param = (NormalizedVolumeParameter)parameter;
+        Length = param.VolumePeriod;
+        HighVolumeThreshold = param.HighVolume;
+        LowVolumeThreshold = param.LowVolume;
+        NormalVolumeThreshold = param.NormalHighVolumeRange;
+    }
+
     public void Calculate(List<BarData> bars)
     {
         // Extract volumes

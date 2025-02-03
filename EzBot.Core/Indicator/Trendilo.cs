@@ -14,9 +14,20 @@ public class Trendilo(TrendiloParameter parameter) : ITrendIndicator
     private double AvpchValue { get; set; }
     private double RmsValue { get; set; }
 
+    // update parameters
+    public void UpdateParameters(IIndicatorParameter parameter)
+    {
+        TrendiloParameter param = (TrendiloParameter)parameter;
+        Smoothing = param.Smoothing;
+        Lookback = param.Lookback;
+        AlmaOffset = param.AlmaOffset;
+        AlmaSigma = param.AlmaSigma;
+        BandMultiplier = param.BandMultiplier;
+    }
+
     public void Calculate(List<BarData> bars)
     {
-        List<double> src = bars.Select(b => b.Close).ToList();
+        List<double> src = [.. bars.Select(b => b.Close)];
         int count = src.Count;
 
         // Calculate percent change over 'Smoothing' periods
@@ -36,7 +47,7 @@ public class Trendilo(TrendiloParameter parameter) : ITrendIndicator
 
         List<double> avpch = MathUtility.ALMA(PercentageChange, Lookback, AlmaOffset, AlmaSigma);
 
-        List<double> rmsList = new List<double>();
+        List<double> rmsList = [];
         for (int i = 0; i < count; i++)
         {
             if (i >= Lookback - 1)

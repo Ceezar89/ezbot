@@ -1,3 +1,4 @@
+using EzBot.Common.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
 

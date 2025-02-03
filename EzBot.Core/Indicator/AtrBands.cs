@@ -21,6 +21,14 @@ public class AtrBands(AtrBandsParameter parameter) : IRiskManagementIndicator
     private List<double> UpperBand = [];
     private List<double> LowerBand = [];
 
+    public void UpdateParameters(IIndicatorParameter parameter)
+    {
+        AtrBandsParameter param = (AtrBandsParameter)parameter;
+        ATRPeriod = param.Period;
+        ATRMultiplierUpper = param.MultiplierUpper;
+        ATRMultiplierLower = param.MultiplierLower;
+    }
+
     // Method to calculate ATR Bands
     public void Calculate(List<BarData> bars)
     {
