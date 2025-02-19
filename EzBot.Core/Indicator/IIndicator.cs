@@ -1,10 +1,11 @@
 using EzBot.Models;
-using EzBot.Models.Indicator;
+using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Indicator;
 
 public interface IIndicator
 {
+    IIndicatorParameter GetParameters();
     void UpdateParameters(IIndicatorParameter parameter);
     void Calculate(List<BarData> bars);
 }
@@ -23,4 +24,6 @@ public interface IRiskManagementIndicator : IIndicator
 {
     double GetLongStopLoss();
     double GetShortStopLoss();
+    double GetShortTakeProfit();
+    double GetLongTakeProfit();
 }

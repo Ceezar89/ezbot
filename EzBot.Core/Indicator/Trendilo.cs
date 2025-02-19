@@ -1,63 +1,46 @@
 using EzBot.Common;
 using EzBot.Models;
-using EzBot.Models.Indicator;
+using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Indicator;
 
-public class Trendilo(TrendiloParameter parameter) : ITrendIndicator
+public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParameter>(parameter), ITrendIndicator
 {
-    private int Smoothing { get; set; } = parameter.Smoothing;
-    private int Lookback { get; set; } = parameter.Lookback;
-    private double AlmaOffset { get; set; } = parameter.AlmaOffset;
-    private int AlmaSigma { get; set; } = parameter.AlmaSigma;
-    private double BandMultiplier { get; set; } = parameter.BandMultiplier;
-    private double AvpchValue { get; set; }
-    private double RmsValue { get; set; }
+    private double AvpchValue;
+    private double RmsValue;
 
-    // update parameters
-    public void UpdateParameters(IIndicatorParameter parameter)
-    {
-        TrendiloParameter param = (TrendiloParameter)parameter;
-        Smoothing = param.Smoothing;
-        Lookback = param.Lookback;
-        AlmaOffset = param.AlmaOffset;
-        AlmaSigma = param.AlmaSigma;
-        BandMultiplier = param.BandMultiplier;
-    }
-
-    public void Calculate(List<BarData> bars)
+    public override void Calculate(List<BarData> bars)
     {
         List<double> src = [.. bars.Select(b => b.Close)];
         int count = src.Count;
 
-        // Calculate percent change over 'Smoothing' periods
-        List<double> PercentageChange = new List<double>();
+        List<double> percentageChange = [];
         for (int i = 0; i < count; i++)
         {
-            if (i >= Smoothing)
+            if (i >= Parameter.Smoothing)
             {
-                double change = (src[i] - src[i - Smoothing]) / src[i - Smoothing] * 100;
-                PercentageChange.Add(change);
+                double change = (src[i] - src[i - Parameter.Smoothing]) / src[i - Parameter.Smoothing] * 100;
+                percentageChange.Add(change);
             }
             else
             {
-                PercentageChange.Add(0.0);
+                percentageChange.Add(0.0);
             }
         }
 
-        List<double> avpch = MathUtility.ALMA(PercentageChange, Lookback, AlmaOffset, AlmaSigma);
+        List<double> avpch = MathUtility.ALMA(percentageChange, Parameter.Lookback, Parameter.AlmaOffset, Parameter.AlmaSigma);
 
         List<double> rmsList = [];
         for (int i = 0; i < count; i++)
         {
-            if (i >= Lookback - 1)
+            if (i >= Parameter.Lookback - 1)
             {
                 double sum = 0.0;
-                for (int j = i - Lookback + 1; j <= i; j++)
+                for (int j = i - Parameter.Lookback + 1; j <= i; j++)
                 {
                     sum += avpch[j] * avpch[j];
                 }
-                double rms = BandMultiplier * Math.Sqrt(sum / Lookback);
+                double rms = Parameter.BandMultiplier * Math.Sqrt(sum / Parameter.Lookback);
                 rmsList.Add(rms);
             }
             else

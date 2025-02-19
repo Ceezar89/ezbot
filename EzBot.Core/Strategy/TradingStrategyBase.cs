@@ -3,9 +3,9 @@ using EzBot.Models;
 
 namespace EzBot.Core.Strategy;
 
-public abstract class Strategy(List<IIndicator> Indicators) : IStrategy
+public abstract class TradingStrategyBase(IndicatorCollection Indicators) : ITradingStrategy
 {
-    private List<IIndicator> Indicators { get; set; } = Indicators;
+    private readonly IndicatorCollection Indicators = Indicators;
     protected List<TrendSignal> TrendSignals = [];
     protected List<VolumeSignal> VolumeSignals = [];
 
@@ -16,8 +16,10 @@ public abstract class Strategy(List<IIndicator> Indicators) : IStrategy
     {
         TrendSignals.Clear();
         VolumeSignals.Clear();
-        double LongStoploss = -1;
-        double ShortStoploss = -1;
+        double LongStoploss = Double.NaN;
+        double ShortStoploss = Double.NaN;
+        double LongTakeProfit = Double.NaN;
+        double ShortTakeProfit = Double.NaN;
 
         foreach (IIndicator indicator in Indicators)
         {
@@ -35,6 +37,8 @@ public abstract class Strategy(List<IIndicator> Indicators) : IStrategy
                 case IRiskManagementIndicator riskManagementIndicator:
                     LongStoploss = riskManagementIndicator.GetLongStopLoss();
                     ShortStoploss = riskManagementIndicator.GetShortStopLoss();
+                    LongTakeProfit = riskManagementIndicator.GetLongTakeProfit();
+                    ShortTakeProfit = riskManagementIndicator.GetShortTakeProfit();
                     break;
             }
         }
@@ -42,9 +46,10 @@ public abstract class Strategy(List<IIndicator> Indicators) : IStrategy
         // finally, execute the strategy
         return ExecuteStrategy() switch
         {
-            TradeType.Long => new TradeOrder(TradeType.Long, LongStoploss),
-            TradeType.Short => new TradeOrder(TradeType.Short, ShortStoploss),
-            _ => new TradeOrder(TradeType.None, -1)
+            TradeType.Long => new LongTradeOrder(LongStoploss, LongTakeProfit),
+            TradeType.Short => new ShortTradeOrder(ShortStoploss, ShortTakeProfit),
+            TradeType.None => new TradeOrder(TradeType.None, double.NaN, double.NaN),
+            _ => new TradeOrder(TradeType.None, double.NaN, double.NaN)
         };
     }
 }

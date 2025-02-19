@@ -2,7 +2,7 @@ using EzBot.Models;
 
 namespace EzBot.Core.Strategy;
 
-public interface IStrategy
+public interface ITradingStrategy
 {
     TradeOrder GetAction(List<BarData> bars);
 }

@@ -1,16 +1,19 @@
 namespace EzBot.Models;
-public class BarData(long timestamp, double open, double high, double low, double close, double volume)
+
+public record BarData(
+    long Timestamp = default,
+    double Open = default,
+    double High = default,
+    double Low = default,
+    double Close = default,
+    double Volume = default)
 {
     // unix timestamp as int
-    public long TimeStamp { get; set; } = timestamp;
-    public double Open { get; set; } = open;
-    public double High { get; set; } = high;
-    public double Low { get; set; } = low;
-    public double Close { get; set; } = close;
-    public double Volume { get; set; } = volume;
+    public long TimeStamp { get; set; } = Timestamp;
+    public double Open { get; set; } = Open;
+    public double High { get; set; } = High;
+    public double Low { get; set; } = Low;
+    public double Close { get; set; } = Close;
+    public double Volume { get; set; } = Volume;
 
-    // Default constructor for serialization
-    public BarData() : this(0, 0, 0, 0, 0, 0)
-    {
-    }
 }

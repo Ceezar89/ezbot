@@ -1,75 +1,37 @@
 using EzBot.Models;
-using EzBot.Models.Indicator;
+using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Indicator;
-
-public class AtrBands(AtrBandsParameter parameter) : IRiskManagementIndicator
+public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParameter>(parameter), IRiskManagementIndicator
 {
-    // Inputs
-    private int ATRPeriod { get; set; } = parameter.Period;
-    private double ATRMultiplierUpper { get; set; } = parameter.MultiplierUpper;
-    private double ATRMultiplierLower { get; set; } = parameter.MultiplierLower;
-
-    // Data sources for upper and lower calculations
-    private List<double> SrcUpper { get; set; } = [];
-    private List<double> SrcLower { get; set; } = [];
-
-    // ATR values
     private List<double> ATRValues = [];
-
-    // Upper and Lower Bands
     private List<double> UpperBand = [];
     private List<double> LowerBand = [];
+    private double LongTakeProfit;
+    private double ShortTakeProfit;
 
-    public void UpdateParameters(IIndicatorParameter parameter)
+    public override void Calculate(List<BarData> bars)
     {
-        AtrBandsParameter param = (AtrBandsParameter)parameter;
-        ATRPeriod = param.Period;
-        ATRMultiplierUpper = param.MultiplierUpper;
-        ATRMultiplierLower = param.MultiplierLower;
-    }
+        double currentPrice = bars.Last().Close;
+        LongTakeProfit = currentPrice + (currentPrice - GetLongStopLoss()) * Parameter.RiskRewardRatio;
+        ShortTakeProfit = currentPrice - (GetShortStopLoss() - currentPrice) * Parameter.RiskRewardRatio;
 
-    // Method to calculate ATR Bands
-    public void Calculate(List<BarData> bars)
-    {
         int count = bars.Count;
-
-        // Ensure we have enough data
-        if (count < ATRPeriod)
-        {
+        if (count < Parameter.Period)
             throw new ArgumentException("Not enough data to calculate ATR Bands.");
-        }
 
-        // Initialize lists
         ATRValues = [.. new double[count]];
         UpperBand = [.. new double[count]];
         LowerBand = [.. new double[count]];
 
-        // If SrcUpper and SrcLower are not provided, default to close prices
-        if (SrcUpper.Count == 0)
-        {
-            foreach (var bar in bars)
-            {
-                SrcUpper.Add(bar.Close);
-            }
-        }
-
-        if (SrcLower.Count == 0)
-        {
-            foreach (var bar in bars)
-            {
-                SrcLower.Add(bar.Close);
-            }
-        }
-
-        // Calculate True Range (TR) and ATR
+        List<double> SrcUpper = bars.Select(b => b.Close).ToList();
+        List<double> SrcLower = bars.Select(b => b.Close).ToList();
         List<double> trueRange = [];
 
         for (int i = 0; i < count; i++)
         {
             if (i == 0)
             {
-                // First TR is High - Low
                 double tr = bars[i].High - bars[i].Low;
                 trueRange.Add(tr);
             }
@@ -85,14 +47,10 @@ public class AtrBands(AtrBandsParameter parameter) : IRiskManagementIndicator
                 trueRange.Add(tr);
             }
 
-            // Calculate ATR using Wilder's Moving Average
             if (i == 0)
-            {
                 ATRValues[i] = trueRange[i];
-            }
-            else if (i < ATRPeriod)
+            else if (i < Parameter.Period)
             {
-                // Simple average for initial ATRPeriod
                 double sumTR = 0.0;
                 for (int j = 0; j <= i; j++)
                 {
@@ -101,24 +59,18 @@ public class AtrBands(AtrBandsParameter parameter) : IRiskManagementIndicator
                 ATRValues[i] = sumTR / (i + 1);
             }
             else
-            {
-                // Wilder's smoothing
-                ATRValues[i] = ((ATRValues[i - 1] * (ATRPeriod - 1)) + trueRange[i]) / ATRPeriod;
-            }
+                ATRValues[i] = ((ATRValues[i - 1] * (Parameter.Period - 1)) + trueRange[i]) / Parameter.Period;
 
-            // Calculate Upper and Lower Bands
-            UpperBand[i] = SrcUpper[i] + ATRValues[i] * ATRMultiplierUpper;
-            LowerBand[i] = SrcLower[i] - ATRValues[i] * ATRMultiplierLower;
+            UpperBand[i] = SrcUpper[i] + ATRValues[i] * Parameter.MultiplierUpper;
+            LowerBand[i] = SrcLower[i] - ATRValues[i] * Parameter.MultiplierLower;
         }
     }
 
-    public double GetLongStopLoss()
-    {
-        return LowerBand.Last();
-    }
+    public double GetLongStopLoss() => LowerBand.Last();
 
-    public double GetShortStopLoss()
-    {
-        return UpperBand.Last();
-    }
+    public double GetShortStopLoss() => UpperBand.Last();
+
+    public double GetLongTakeProfit() => LongTakeProfit;
+
+    public double GetShortTakeProfit() => ShortTakeProfit;
 }

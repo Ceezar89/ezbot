@@ -1,6 +1,6 @@
 using EzBot.Core.Indicator;
 using EzBot.Core.Strategy;
-using EzBot.Models.Indicator;
+using EzBot.Core.IndicatorParameter;
 using EzBot.Persistence;
 
 namespace EzBot.Services.Strategy;
@@ -9,7 +9,7 @@ public class StrategyService(EzBotDbContext dbContext) : IStrategyService
 {
     private readonly EzBotDbContext _dbContext = dbContext;
 
-    public IStrategy CreateUnoptimizedStrategy(StrategyType strategyType)
+    public ITradingStrategy CreateUnoptimizedStrategy(StrategyType strategyType)
     {
         return strategyType switch
         {
@@ -18,9 +18,18 @@ public class StrategyService(EzBotDbContext dbContext) : IStrategyService
         };
     }
 
-    private static List<IIndicator> GetUnoptimizedIndicators(StrategyType strategyType)
+    public static ITradingStrategy CreateEmptyStrategy(StrategyType strategyType)
     {
-        List<IIndicator> indicators = [];
+        return strategyType switch
+        {
+            StrategyType.PrecisionTrend => new PrecisionTrend([]),
+            _ => throw new ArgumentException("Unknown StrategyType")
+        };
+    }
+
+    public static IndicatorCollection GetUnoptimizedIndicators(StrategyType strategyType)
+    {
+        IndicatorCollection indicators = [];
 
         switch (strategyType)
         {

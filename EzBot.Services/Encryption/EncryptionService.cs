@@ -9,6 +9,7 @@ public class EncryptionService(string encryptionSecret) : IEncryptionService
     private readonly byte[] _key = SHA256.HashData(Encoding.UTF8.GetBytes(encryptionSecret));
     private const int TagLength = 16; // 128-bit tag
     private const int NonceLength = 12; // 96-bit nonce
+    
     public string Encrypt(string plainText)
     {
         if (string.IsNullOrEmpty(plainText))

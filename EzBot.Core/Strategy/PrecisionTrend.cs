@@ -3,7 +3,7 @@ using EzBot.Models;
 
 namespace EzBot.Core.Strategy;
 
-public sealed class PrecisionTrend(List<IIndicator> Indicators) : Strategy(Indicators)
+public sealed class PrecisionTrend(IndicatorCollection Indicators) : TradingStrategyBase(Indicators)
 {
     protected override TradeType ExecuteStrategy()
     {

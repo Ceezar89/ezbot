@@ -1,6 +1,6 @@
 using EzBot.Core.Indicator;
 using EzBot.Models;
-using EzBot.Models.Indicator;
+using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Tests.Core.Indicator;
 

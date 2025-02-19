@@ -1,7 +1,7 @@
 
 using EzBot.Core.Indicator;
+using EzBot.Core.IndicatorParameter;
 using EzBot.Models;
-using EzBot.Models.Indicator;
 
 namespace EzBot.Tests.Core.Indicator;
 
@@ -20,7 +20,7 @@ public class EtmaTests
                 new() { High = 14, Low = 10, Close = 14 }
             };
 
-        var parameter = new EtmaParameter("test", 14, SignalStrength.VeryStrong);
+        var parameter = new EtmaParameter(14, SignalStrength.VeryStrong);
         var etma = new Etma(parameter);
 
         // Act: Calculate the indicator.
@@ -44,7 +44,7 @@ public class EtmaTests
                 new() { High = 6,  Low = 6,  Close = 6  }
             };
 
-        var parameter = new EtmaParameter("test", 14, SignalStrength.Strong);
+        var parameter = new EtmaParameter(14, SignalStrength.VeryStrong);
         var etma = new Etma(parameter);
 
         // Act: Calculate the indicator.
@@ -68,7 +68,7 @@ public class EtmaTests
                 new() { High = 10, Low = 10, Close = 10 }
             };
 
-        var parameter = new EtmaParameter("test", 14, SignalStrength.Signal);
+        var parameter = new EtmaParameter(14, SignalStrength.VeryStrong);
         var etma = new Etma(parameter);
 
         // Act: Calculate the indicator.

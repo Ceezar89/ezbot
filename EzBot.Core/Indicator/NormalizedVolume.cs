@@ -1,58 +1,29 @@
 using EzBot.Common;
 using EzBot.Models;
-using EzBot.Models.Indicator;
+using EzBot.Core.IndicatorParameter;
 
-namespace EzBot.Core.Indicator;
-
-public class NormalizedVolume(NormalizedVolumeParameter parameter) : IVolumeIndicator
+namespace EzBot.Core.Indicator
 {
-    // Inputs
-    private int Length { get; set; } = parameter.VolumePeriod;
-    private int HighVolumeThreshold { get; set; } = parameter.HighVolume;
-    private int LowVolumeThreshold { get; set; } = parameter.LowVolume;
-    private int NormalVolumeThreshold { get; set; } = parameter.NormalHighVolumeRange;
-    private double NVolume { get; set; }
-
-    public void UpdateParameters(IIndicatorParameter parameter)
+    public class NormalizedVolume(NormalizedVolumeParameter parameter) : IndicatorBase<NormalizedVolumeParameter>(parameter), IVolumeIndicator
     {
-        NormalizedVolumeParameter param = (NormalizedVolumeParameter)parameter;
-        Length = param.VolumePeriod;
-        HighVolumeThreshold = param.HighVolume;
-        LowVolumeThreshold = param.LowVolume;
-        NormalVolumeThreshold = param.NormalHighVolumeRange;
-    }
+        private double NVolume;
 
-    public void Calculate(List<BarData> bars)
-    {
-        // Extract volumes
-        List<double> volumes = bars.Select(b => b.Volume).ToList();
-
-        // Calculate SMA of volume
-        List<double> smaVolume = MathUtility.SMA(volumes, Length);
-
-        // Determine high, low, and normal volume. return sentiment for most recent bar
-        NVolume = volumes.Last() / smaVolume.Last() * 100;
-
-    }
-
-    public VolumeSignal GetVolumeSignal()
-    {
-        if (NVolume >= HighVolumeThreshold)
+        public override void Calculate(List<BarData> bars)
         {
-            return VolumeSignal.High;
+            List<double> volumes = bars.Select(b => b.Volume).ToList();
+            List<double> smaVolume = MathUtility.SMA(volumes, Parameter.VolumePeriod);
+            NVolume = volumes.Last() / smaVolume.Last() * 100;
         }
-        else if (NVolume > NormalVolumeThreshold && NVolume < HighVolumeThreshold)
+
+        public VolumeSignal GetVolumeSignal()
         {
-            return VolumeSignal.Normal;
-        }
-        else if (NVolume <= LowVolumeThreshold)
-        {
-            return VolumeSignal.Low;
-        }
-        else
-        {
+            if (NVolume >= Parameter.HighVolume)
+                return VolumeSignal.High;
+            else if (NVolume > Parameter.NormalHighVolumeRange && NVolume < Parameter.HighVolume)
+                return VolumeSignal.Normal;
+            else if (NVolume <= Parameter.LowVolume)
+                return VolumeSignal.Low;
             return VolumeSignal.Normal;
         }
     }
-
 }
