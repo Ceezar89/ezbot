@@ -23,10 +23,6 @@ public class NormalizedVolumeParameter : IIndicatorParameter
     public NormalizedVolumeParameter()
     {
         Name = "normalized_volume";
-        VolumePeriod = VolumePeriodRange.Min;
-        HighVolume = HighVolumeRange.Min;
-        LowVolume = LowVolumeRange.Min;
-        NormalHighVolumeRange = NormalHighVolumeRangeRange.Min;
     }
 
     public NormalizedVolumeParameter(int volumePeriod, int highVolume, int lowVolume, int normalHighVolumeRange)
