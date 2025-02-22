@@ -2,63 +2,73 @@ using EzBot.Models;
 
 namespace EzBot.Core.IndicatorParameter;
 
-public class EtmaParameter : IIndicatorParameter
+public class EtmaParameter : IndicatorParameterBase
 {
-    public string Name { get; set; } = "etma";
-    public int Lenght { get; set; } = 14;
-    public SignalStrength SignalStrength { get; set; } = SignalStrength.VeryStrong;
+    private int _length = 14;
+    private SignalStrength _signalStrength = SignalStrength.VeryStrong;
 
     // Ranges
-    private (int Min, int Max) LenghtRange = (1, 25);
-    private (int Min, int Max) SignalStrengthRange = (0, 2);
+    private static readonly (int Min, int Max) LengthRange = (1, 25);
+    private static readonly (int Min, int Max) SignalStrengthRange = (0, 2);
 
     // Steps
-    private const int LenghtRangeStep = 1;
+    private const int LengthRangeStep = 1;
     private const int SignalStrengthRangeStep = 1;
 
-    public EtmaParameter()
+    public int Length
     {
-        Name = "etma";
-        Lenght = LenghtRange.Min;
+        get => _length;
+        set => ValidateAndSetValue(ref _length, value, LengthRange);
+    }
+
+    public SignalStrength SignalStrength
+    {
+        get => _signalStrength;
+        set
+        {
+            int intValue = (int)value;
+            ValidateAndSetValue(ref intValue, intValue, SignalStrengthRange);
+            _signalStrength = (SignalStrength)intValue;
+        }
+    }
+
+    public EtmaParameter() : base("etma")
+    {
+        Length = LengthRange.Min;
         SignalStrength = (SignalStrength)SignalStrengthRange.Min;
     }
 
-    public EtmaParameter(int length, SignalStrength signalStrength)
+    public EtmaParameter(int length, SignalStrength signalStrength) : base("etma")
     {
-        Lenght = length;
+        Length = length;
         SignalStrength = signalStrength;
     }
 
-    public void IncrementSingle()
+    public override void IncrementSingle()
     {
-        if (Lenght < LenghtRange.Max)
+        if (IncrementValue(ref _length, LengthRangeStep, LengthRange))
+            return;
+
+        int signalStrengthInt = (int)_signalStrength;
+        if (IncrementValue(ref signalStrengthInt, SignalStrengthRangeStep, SignalStrengthRange))
         {
-            Lenght += LenghtRangeStep;
-        }
-        else if ((int)SignalStrength < SignalStrengthRange.Max)
-        {
-            SignalStrength += SignalStrengthRangeStep;
+            _signalStrength = (SignalStrength)signalStrengthInt;
         }
     }
 
-    public bool CanIncrement()
+    public override bool CanIncrement()
     {
-        return Lenght < LenghtRange.Max || (int)SignalStrength < SignalStrengthRange.Max;
+        return Length < LengthRange.Max || (int)SignalStrength < SignalStrengthRange.Max;
     }
 
-    public override int GetHashCode()
+    protected override int GetAdditionalHashCodeComponents()
     {
-        return HashCode.Combine(Name, Lenght, SignalStrength);
+        return HashCode.Combine(Length, SignalStrength);
     }
 
-    public bool Equals(IIndicatorParameter? other)
+    protected override bool EqualsCore(IIndicatorParameter other)
     {
-        if (other == null || GetType() != other.GetType())
-        {
-            return false;
-        }
-
         var p = (EtmaParameter)other;
-        return (Name == p.Name) && (Lenght == p.Lenght) && (SignalStrength == p.SignalStrength);
+        return Length == p.Length && SignalStrength == p.SignalStrength;
     }
 }

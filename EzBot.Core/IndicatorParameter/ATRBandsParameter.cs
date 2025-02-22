@@ -1,19 +1,17 @@
-
 namespace EzBot.Core.IndicatorParameter;
 
-public class AtrBandsParameter : IIndicatorParameter
+public class AtrBandsParameter : IndicatorParameterBase
 {
-    public string Name { get; set; } = "atr_bands";
-    public int Period { get; set; } = 14;
-    public double MultiplierUpper { get; set; } = 2.0;
-    public double MultiplierLower { get; set; } = 2.0;
-    public double RiskRewardRatio { get; set; } = 1.1;
+    private int _period = 14;
+    private double _multiplierUpper = 2.0;
+    private double _multiplierLower = 2.0;
+    private double _riskRewardRatio = 1.1;
 
     // Ranges
-    private (int Min, int Max) PeriodRange = (6, 28);
-    private (double Min, double Max) MultiplierUpperRange = (0.5, 5.0);
-    private (double Min, double Max) MultiplierLowerRange = (0.5, 5.0);
-    private (double Min, double Max) RiskRewardRatioRange = (1.1, 2.0);
+    private static readonly (int Min, int Max) PeriodRange = (6, 28);
+    private static readonly (double Min, double Max) MultiplierUpperRange = (0.5, 5.0);
+    private static readonly (double Min, double Max) MultiplierLowerRange = (0.5, 5.0);
+    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.1, 2.0);
 
     // Steps
     private const int PeriodRangeStep = 2;
@@ -21,9 +19,32 @@ public class AtrBandsParameter : IIndicatorParameter
     private const double MultiplierLowerRangeStep = 0.5;
     private const double RiskRewardRatioRangeStep = 0.1;
 
-    public AtrBandsParameter()
+    public int Period
     {
-        Name = "atr_bands";
+        get => _period;
+        set => ValidateAndSetValue(ref _period, value, PeriodRange);
+    }
+
+    public double MultiplierUpper
+    {
+        get => _multiplierUpper;
+        set => ValidateAndSetValue(ref _multiplierUpper, value, MultiplierUpperRange);
+    }
+
+    public double MultiplierLower
+    {
+        get => _multiplierLower;
+        set => ValidateAndSetValue(ref _multiplierLower, value, MultiplierLowerRange);
+    }
+
+    public double RiskRewardRatio
+    {
+        get => _riskRewardRatio;
+        set => ValidateAndSetValue(ref _riskRewardRatio, value, RiskRewardRatioRange);
+    }
+
+    public AtrBandsParameter() : base("atr_bands")
+    {
         Period = PeriodRange.Min;
         MultiplierUpper = MultiplierUpperRange.Min;
         MultiplierLower = MultiplierLowerRange.Min;
@@ -31,35 +52,26 @@ public class AtrBandsParameter : IIndicatorParameter
     }
 
     public AtrBandsParameter(string name, int period, double multiplierUpper, double multiplierLower, double riskRewardRatio)
+        : base(name)
     {
-        Name = name;
         Period = period;
         MultiplierUpper = multiplierUpper;
         MultiplierLower = multiplierLower;
         RiskRewardRatio = riskRewardRatio;
     }
 
-    public void IncrementSingle()
+    public override void IncrementSingle()
     {
-        if (Period < PeriodRange.Max)
-        {
-            Period += PeriodRangeStep;
-        }
-        else if (MultiplierUpper < MultiplierUpperRange.Max)
-        {
-            MultiplierUpper += MultiplierUpperRangeStep;
-        }
-        else if (MultiplierLower < MultiplierLowerRange.Max)
-        {
-            MultiplierLower += MultiplierLowerRangeStep;
-        }
-        else if (RiskRewardRatio < RiskRewardRatioRange.Max)
-        {
-            RiskRewardRatio += RiskRewardRatioRangeStep;
-        }
+        if (IncrementValue(ref _period, PeriodRangeStep, PeriodRange))
+            return;
+        if (IncrementValue(ref _multiplierUpper, MultiplierUpperRangeStep, MultiplierUpperRange))
+            return;
+        if (IncrementValue(ref _multiplierLower, MultiplierLowerRangeStep, MultiplierLowerRange))
+            return;
+        IncrementValue(ref _riskRewardRatio, RiskRewardRatioRangeStep, RiskRewardRatioRange);
     }
 
-    public bool CanIncrement()
+    public override bool CanIncrement()
     {
         return Period < PeriodRange.Max
                 || MultiplierUpper < MultiplierUpperRange.Max
@@ -67,23 +79,17 @@ public class AtrBandsParameter : IIndicatorParameter
                 || RiskRewardRatio < RiskRewardRatioRange.Max;
     }
 
-    public override int GetHashCode()
+    protected override int GetAdditionalHashCodeComponents()
     {
-        return HashCode.Combine(Name, Period, MultiplierUpper, MultiplierLower, RiskRewardRatio);
+        return HashCode.Combine(Period, MultiplierUpper, MultiplierLower, RiskRewardRatio);
     }
 
-    public bool Equals(IIndicatorParameter? other)
+    protected override bool EqualsCore(IIndicatorParameter other)
     {
-        if (other == null || GetType() != other.GetType())
-        {
-            return false;
-        }
-
         var p = (AtrBandsParameter)other;
-        return (Name == p.Name)
-                && (Period == p.Period)
-                && (MultiplierUpper == p.MultiplierUpper)
-                && (MultiplierLower == p.MultiplierLower)
-                && (RiskRewardRatio == p.RiskRewardRatio);
+        return Period == p.Period
+                && MultiplierUpper == p.MultiplierUpper
+                && MultiplierLower == p.MultiplierLower
+                && RiskRewardRatio == p.RiskRewardRatio;
     }
 }

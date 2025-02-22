@@ -20,18 +20,18 @@ namespace EzBot.Core.Indicator
             _signalEntryLongETMA.Clear();
             _signalEntryShortETMA.Clear();
 
-            double l2ETMA = Parameter.Lenght / 2.0;
+            double l2ETMA = Parameter.Length / 2.0;
 
             for (int i = 0; i < bars.Count; i++)
             {
                 double srcETMA = (bars[i].High + bars[i].Low + bars[i].Close + bars[i].Close) / 4.0;
                 double filtETMA_i = 0.0, coefETMA = 0.0;
 
-                for (int j = 1; j <= Parameter.Lenght; j++)
+                for (int j = 1; j <= Parameter.Length; j++)
                 {
                     int idx = i - j + 1;
                     if (idx < 0) break;
-                    double cETMA = (j < l2ETMA) ? j : (j > l2ETMA ? Parameter.Lenght + 1 - j : l2ETMA);
+                    double cETMA = (j < l2ETMA) ? j : (j > l2ETMA ? Parameter.Length + 1 - j : l2ETMA);
                     double srcETMA_idx = (bars[idx].High + bars[idx].Low + bars[idx].Close + bars[idx].Close) / 4.0;
                     filtETMA_i += cETMA * srcETMA_idx;
                     coefETMA += cETMA;

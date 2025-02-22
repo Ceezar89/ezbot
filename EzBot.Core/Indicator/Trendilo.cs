@@ -6,10 +6,21 @@ namespace EzBot.Core.Indicator;
 
 public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParameter>(parameter), ITrendIndicator
 {
-    private double AvpchValue;
-    private double RmsValue;
+    private readonly record struct CalculationState(double AvpchValue, double RmsValue);
+    private CalculationState _state;
 
     public override void Calculate(List<BarData> bars)
+    {
+        var percentageChanges = CalculatePercentageChanges(bars);
+        var avpch = MathUtility.ALMA(percentageChanges, Parameter.Lookback,
+            Parameter.AlmaOffset, Parameter.AlmaSigma);
+        var rmsList = CalculateRmsList(avpch);
+
+        int idx = bars.Count - 1;
+        _state = new(avpch[idx], rmsList[idx]);
+    }
+
+    private List<double> CalculatePercentageChanges(List<BarData> bars)
     {
         List<double> src = [.. bars.Select(b => b.Close)];
         int count = src.Count;
@@ -27,9 +38,12 @@ public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParam
                 percentageChange.Add(0.0);
             }
         }
+        return percentageChange;
+    }
 
-        List<double> avpch = MathUtility.ALMA(percentageChange, Parameter.Lookback, Parameter.AlmaOffset, Parameter.AlmaSigma);
-
+    private List<double> CalculateRmsList(List<double> avpch)
+    {
+        int count = avpch.Count;
         List<double> rmsList = [];
         for (int i = 0; i < count; i++)
         {
@@ -48,22 +62,13 @@ public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParam
                 rmsList.Add(0.0);
             }
         }
-
-        int idx = count - 1;
-        AvpchValue = avpch[idx];
-        RmsValue = rmsList[idx];
+        return rmsList;
     }
 
-    public TrendSignal GetTrendSignal()
+    public TrendSignal GetTrendSignal() => _state switch
     {
-        if (AvpchValue > RmsValue)
-        {
-            return TrendSignal.Bullish;
-        }
-        else if (AvpchValue < -RmsValue)
-        {
-            return TrendSignal.Bearish;
-        }
-        return TrendSignal.Neutral;
-    }
+        { AvpchValue: var a, RmsValue: var r } when a > r => TrendSignal.Bullish,
+        { AvpchValue: var a, RmsValue: var r } when a < -r => TrendSignal.Bearish,
+        _ => TrendSignal.Neutral
+    };
 }

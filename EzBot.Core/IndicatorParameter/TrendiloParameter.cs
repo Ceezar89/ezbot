@@ -1,20 +1,19 @@
 namespace EzBot.Core.IndicatorParameter;
 
-public class TrendiloParameter : IIndicatorParameter
+public class TrendiloParameter : IndicatorParameterBase
 {
-    public string Name { get; set; } = "trendilo";
-    public int Smoothing { get; set; } = 1;
-    public int Lookback { get; set; } = 50;
-    public double AlmaOffset { get; set; } = 0.85;
-    public int AlmaSigma { get; set; } = 6;
-    public double BandMultiplier { get; set; } = 1.0;
+    private int _smoothing = 1;
+    private int _lookback = 50;
+    private double _almaOffset = 0.85;
+    private int _almaSigma = 6;
+    private double _bandMultiplier = 1.0;
 
     // Ranges
-    private (int Min, int Max) SmoothingRange = (1, 10);
-    private (int Min, int Max) LookbackRange = (20, 200);
-    private (double Min, double Max) AlmaOffsetRange = (0.1, 2.0);
-    private (int Min, int Max) AlmaSigmaRange = (1, 20);
-    private (double Min, double Max) BandMultiplierRange = (0.5, 2.0);
+    private static readonly (int Min, int Max) SmoothingRange = (1, 10);
+    private static readonly (int Min, int Max) LookbackRange = (20, 200);
+    private static readonly (double Min, double Max) AlmaOffsetRange = (0.1, 2.0);
+    private static readonly (int Min, int Max) AlmaSigmaRange = (1, 20);
+    private static readonly (double Min, double Max) BandMultiplierRange = (0.5, 2.0);
 
     // Steps
     private const int SmoothingRangeStep = 1;
@@ -23,9 +22,38 @@ public class TrendiloParameter : IIndicatorParameter
     private const int AlmaSigmaRangeStep = 1;
     private const double BandMultiplierRangeStep = 0.1;
 
-    public TrendiloParameter()
+    public int Smoothing
     {
-        Name = "trendilo";
+        get => _smoothing;
+        set => ValidateAndSetValue(ref _smoothing, value, SmoothingRange);
+    }
+
+    public int Lookback
+    {
+        get => _lookback;
+        set => ValidateAndSetValue(ref _lookback, value, LookbackRange);
+    }
+
+    public double AlmaOffset
+    {
+        get => _almaOffset;
+        set => ValidateAndSetValue(ref _almaOffset, value, AlmaOffsetRange);
+    }
+
+    public int AlmaSigma
+    {
+        get => _almaSigma;
+        set => ValidateAndSetValue(ref _almaSigma, value, AlmaSigmaRange);
+    }
+
+    public double BandMultiplier
+    {
+        get => _bandMultiplier;
+        set => ValidateAndSetValue(ref _bandMultiplier, value, BandMultiplierRange);
+    }
+
+    public TrendiloParameter() : base("trendilo")
+    {
         Smoothing = SmoothingRange.Min;
         Lookback = LookbackRange.Min;
         AlmaOffset = AlmaOffsetRange.Min;
@@ -34,8 +62,8 @@ public class TrendiloParameter : IIndicatorParameter
     }
 
     public TrendiloParameter(string name, int smoothing, int lookback, double almaOffset, int almaSigma, double bandMultiplier)
+        : base(name)
     {
-        Name = name;
         Smoothing = smoothing;
         Lookback = lookback;
         AlmaOffset = almaOffset;
@@ -43,48 +71,40 @@ public class TrendiloParameter : IIndicatorParameter
         BandMultiplier = bandMultiplier;
     }
 
-    public void IncrementSingle()
+    public override void IncrementSingle()
     {
-        if (Smoothing < SmoothingRange.Max)
-        {
-            Smoothing += SmoothingRangeStep;
-        }
-        else if (Lookback < LookbackRange.Max)
-        {
-            Lookback += LookbackRangeStep;
-        }
-        else if (AlmaOffset < AlmaOffsetRange.Max)
-        {
-            AlmaOffset += AlmaOffsetRangeStep;
-        }
-        else if (AlmaSigma < AlmaSigmaRange.Max)
-        {
-            AlmaSigma += AlmaSigmaRangeStep;
-        }
-        else if (BandMultiplier < BandMultiplierRange.Max)
-        {
-            BandMultiplier += BandMultiplierRangeStep;
-        }
+        if (IncrementValue(ref _smoothing, SmoothingRangeStep, SmoothingRange))
+            return;
+        if (IncrementValue(ref _lookback, LookbackRangeStep, LookbackRange))
+            return;
+        if (IncrementValue(ref _almaOffset, AlmaOffsetRangeStep, AlmaOffsetRange))
+            return;
+        if (IncrementValue(ref _almaSigma, AlmaSigmaRangeStep, AlmaSigmaRange))
+            return;
+        IncrementValue(ref _bandMultiplier, BandMultiplierRangeStep, BandMultiplierRange);
     }
 
-    public bool CanIncrement()
+    public override bool CanIncrement()
     {
-        return Smoothing < SmoothingRange.Max || Lookback < LookbackRange.Max || AlmaOffset < AlmaOffsetRange.Max || AlmaSigma < AlmaSigmaRange.Max || BandMultiplier < BandMultiplierRange.Max;
+        return Smoothing < SmoothingRange.Max
+            || Lookback < LookbackRange.Max
+            || AlmaOffset < AlmaOffsetRange.Max
+            || AlmaSigma < AlmaSigmaRange.Max
+            || BandMultiplier < BandMultiplierRange.Max;
     }
 
-    public override int GetHashCode()
+    protected override int GetAdditionalHashCodeComponents()
     {
-        return HashCode.Combine(Name, Smoothing, Lookback, AlmaOffset, AlmaSigma, BandMultiplier);
+        return HashCode.Combine(Smoothing, Lookback, AlmaOffset, AlmaSigma, BandMultiplier);
     }
 
-    public bool Equals(IIndicatorParameter? other)
+    protected override bool EqualsCore(IIndicatorParameter other)
     {
-        if (other == null || GetType() != other.GetType())
-        {
-            return false;
-        }
-
         var p = (TrendiloParameter)other;
-        return (Name == p.Name) && (Smoothing == p.Smoothing) && (Lookback == p.Lookback) && (AlmaOffset == p.AlmaOffset) && (AlmaSigma == p.AlmaSigma) && (BandMultiplier == p.BandMultiplier);
+        return Smoothing == p.Smoothing
+            && Lookback == p.Lookback
+            && AlmaOffset == p.AlmaOffset
+            && AlmaSigma == p.AlmaSigma
+            && BandMultiplier == p.BandMultiplier;
     }
 }
