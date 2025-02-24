@@ -7,7 +7,7 @@ public interface IIndicator
 {
     IIndicatorParameter GetParameters();
     void UpdateParameters(IIndicatorParameter parameter);
-    void Calculate(List<BarData> bars);
+    void SetBarData(BarDataCollection bars);
 }
 
 public interface IVolumeIndicator : IIndicator

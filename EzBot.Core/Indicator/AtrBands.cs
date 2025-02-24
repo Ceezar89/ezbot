@@ -10,7 +10,7 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
     private double LongTakeProfit;
     private double ShortTakeProfit;
 
-    public override void Calculate(List<BarData> bars)
+    protected override void ProcessBarData(List<BarData> bars)
     {
         double currentPrice = bars.Last().Close;
         LongTakeProfit = currentPrice + (currentPrice - GetLongStopLoss()) * Parameter.RiskRewardRatio;

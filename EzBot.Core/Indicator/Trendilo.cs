@@ -9,12 +9,11 @@ public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParam
     private readonly record struct CalculationState(double AvpchValue, double RmsValue);
     private CalculationState _state;
 
-    public override void Calculate(List<BarData> bars)
+    protected override void ProcessBarData(List<BarData> bars)
     {
-        var percentageChanges = CalculatePercentageChanges(bars);
-        var avpch = MathUtility.ALMA(percentageChanges, Parameter.Lookback,
-            Parameter.AlmaOffset, Parameter.AlmaSigma);
-        var rmsList = CalculateRmsList(avpch);
+        List<double> percentageChanges = CalculatePercentageChanges(bars);
+        List<double> avpch = MathUtility.ALMA(percentageChanges, Parameter.Lookback, Parameter.AlmaOffset, Parameter.AlmaSigma);
+        List<double> rmsList = CalculateRmsList(avpch);
 
         int idx = bars.Count - 1;
         _state = new(avpch[idx], rmsList[idx]);

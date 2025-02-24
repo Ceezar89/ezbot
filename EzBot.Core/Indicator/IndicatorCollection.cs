@@ -1,4 +1,5 @@
 using System.Collections;
+using EzBot.Models;
 
 namespace EzBot.Core.Indicator;
 
@@ -42,6 +43,15 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
                 return true;
         }
         return false;
+    }
+
+    public void UpdateAll(List<BarData> bars)
+    {
+        BarDataCollection barDataCollection = new(bars); // collection hashes the bars for lazy evaluation
+        foreach (var indicator in _indicators)
+        {
+            indicator.SetBarData(barDataCollection);
+        }
     }
 
     public IndicatorCollection DeepClone()

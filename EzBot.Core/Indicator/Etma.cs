@@ -11,7 +11,7 @@ namespace EzBot.Core.Indicator
         private readonly List<double> _sloETMA = [];
         private readonly List<int> _sigETMA = [];
 
-        public override void Calculate(List<BarData> bars)
+        protected override void ProcessBarData(List<BarData> bars)
         {
             // Clear calculation state
             _filtETMA.Clear();

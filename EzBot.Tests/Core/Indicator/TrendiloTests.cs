@@ -32,7 +32,7 @@ public class TrendiloTests
         var trendilo = new Trendilo(parameter);
 
         // Act
-        trendilo.Calculate(bars);
+        trendilo.SetBarData(new BarDataCollection(bars));
         var trend = trendilo.GetTrendSignal();
 
         // Assert: expect bullish if ALMA of percentage changes is much positive.
@@ -55,7 +55,7 @@ public class TrendiloTests
         var trendilo = new Trendilo(parameter);
 
         // Act
-        trendilo.Calculate(bars);
+        trendilo.SetBarData(new BarDataCollection(bars));
         var trend = trendilo.GetTrendSignal();
 
         // Assert: expect bearish if ALMA of percentage changes is sufficiently negative.
@@ -78,7 +78,7 @@ public class TrendiloTests
         var trendilo = new Trendilo(parameter);
 
         // Act
-        trendilo.Calculate(bars);
+        trendilo.SetBarData(new BarDataCollection(bars));
         var trend = trendilo.GetTrendSignal();
 
         // Assert: expect neutral signal since no change.

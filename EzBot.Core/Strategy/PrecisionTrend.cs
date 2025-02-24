@@ -13,11 +13,13 @@ public sealed class PrecisionTrend(IndicatorCollection Indicators) : TradingStra
         // If all indicators are bearish and volume is high, go short
         // Otherwise, do not trade
 
-        if (TrendSignals.All(t => t == TrendSignal.Bullish) && VolumeSignals.All(v => v == VolumeSignal.High))
+        if (_signals.TrendSignals.All(t => t == TrendSignal.Bullish)
+                && _signals.VolumeSignals.All(v => v == VolumeSignal.High))
         {
             return TradeType.Long;
         }
-        else if (TrendSignals.All(t => t == TrendSignal.Bearish) && VolumeSignals.All(v => v == VolumeSignal.High))
+        else if (_signals.TrendSignals.All(t => t == TrendSignal.Bearish)
+                && _signals.VolumeSignals.All(v => v == VolumeSignal.High))
         {
             return TradeType.Short;
         }

@@ -24,7 +24,7 @@ public class EtmaTests
         var etma = new Etma(parameter);
 
         // Act: Calculate the indicator.
-        etma.Calculate(bars);
+        etma.SetBarData(new BarDataCollection(bars));
         var trend = etma.GetTrendSignal();
 
         // Assert: Expect Bullish trend.
@@ -48,7 +48,7 @@ public class EtmaTests
         var etma = new Etma(parameter);
 
         // Act: Calculate the indicator.
-        etma.Calculate(bars);
+        etma.SetBarData(new BarDataCollection(bars));
         var trend = etma.GetTrendSignal();
 
         // Assert: Expect Bearish trend.
@@ -72,7 +72,7 @@ public class EtmaTests
         var etma = new Etma(parameter);
 
         // Act: Calculate the indicator.
-        etma.Calculate(bars);
+        etma.SetBarData(new BarDataCollection(bars));
         var trend = etma.GetTrendSignal();
 
         // Assert: Expect Neutral trend.

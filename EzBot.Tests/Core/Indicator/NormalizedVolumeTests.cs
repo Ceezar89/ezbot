@@ -11,13 +11,13 @@ public class NormalizedVolumeTests
     {
         // Arrange
         // 50 bars all with volume=1 
-        var bars = Enumerable.Repeat(new BarData(0, 0, 0, 0, 0, 1), 50).ToList();
+        var bars = Enumerable.Repeat(new BarData { Volume = 1 }, 50).ToList();
         // Then last bar with volume=2
-        bars.Add(new BarData(0, 0, 0, 0, 0, 2));
+        bars.Add(new BarData { Volume = 2 });
 
         var indicator = new NormalizedVolume(new NormalizedVolumeParameter());
         // Act
-        indicator.Calculate(bars);
+        indicator.SetBarData(new BarDataCollection(bars));
         var result = indicator.GetVolumeSignal();
 
         // Assert
@@ -39,7 +39,7 @@ public class NormalizedVolumeTests
         var indicator = new NormalizedVolume(new NormalizedVolumeParameter());
 
         // Act
-        indicator.Calculate(bars);
+        indicator.SetBarData(new BarDataCollection(bars));
         var result = indicator.GetVolumeSignal();
 
         // Assert
@@ -59,7 +59,7 @@ public class NormalizedVolumeTests
         var indicator = new NormalizedVolume(new NormalizedVolumeParameter());
 
         // Act
-        indicator.Calculate(bars);
+        indicator.SetBarData(new BarDataCollection(bars));
         var result = indicator.GetVolumeSignal();
 
         // Assert
@@ -80,7 +80,7 @@ public class NormalizedVolumeTests
         var indicator = new NormalizedVolume(new NormalizedVolumeParameter());
 
         // Act
-        indicator.Calculate(bars);
+        indicator.SetBarData(new BarDataCollection(bars));
         var result = indicator.GetVolumeSignal();
 
         // Assert
