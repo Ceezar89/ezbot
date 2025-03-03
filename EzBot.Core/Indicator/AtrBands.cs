@@ -7,14 +7,12 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
     private List<double> ATRValues = [];
     private List<double> UpperBand = [];
     private List<double> LowerBand = [];
-    private double LongTakeProfit;
-    private double ShortTakeProfit;
+    private List<double> LongTakeProfit = [];
+    private List<double> ShortTakeProfit = [];
 
     protected override void ProcessBarData(List<BarData> bars)
     {
         double currentPrice = bars.Last().Close;
-        LongTakeProfit = currentPrice + (currentPrice - GetLongStopLoss()) * Parameter.RiskRewardRatio;
-        ShortTakeProfit = currentPrice - (GetShortStopLoss() - currentPrice) * Parameter.RiskRewardRatio;
 
         int count = bars.Count;
         if (count < Parameter.Period)
@@ -23,9 +21,11 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
         ATRValues = [.. new double[count]];
         UpperBand = [.. new double[count]];
         LowerBand = [.. new double[count]];
+        LongTakeProfit = [.. new double[count]];
+        ShortTakeProfit = [.. new double[count]];
 
-        List<double> SrcUpper = bars.Select(b => b.Close).ToList();
-        List<double> SrcLower = bars.Select(b => b.Close).ToList();
+        List<double> SrcUpper = [.. bars.Select(b => b.Close)];
+        List<double> SrcLower = [.. bars.Select(b => b.Close)];
         List<double> trueRange = [];
 
         for (int i = 0; i < count; i++)
@@ -63,6 +63,9 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
 
             UpperBand[i] = SrcUpper[i] + ATRValues[i] * Parameter.MultiplierUpper;
             LowerBand[i] = SrcLower[i] - ATRValues[i] * Parameter.MultiplierLower;
+
+            ShortTakeProfit[i] = currentPrice - (UpperBand[i] - currentPrice) * Parameter.RiskRewardRatio;
+            LongTakeProfit[i] = currentPrice + (currentPrice - LowerBand[i]) * Parameter.RiskRewardRatio;
         }
     }
 
@@ -70,7 +73,7 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
 
     public double GetShortStopLoss() => UpperBand.Last();
 
-    public double GetLongTakeProfit() => LongTakeProfit;
+    public double GetLongTakeProfit() => LongTakeProfit.Last();
 
-    public double GetShortTakeProfit() => ShortTakeProfit;
+    public double GetShortTakeProfit() => ShortTakeProfit.Last();
 }

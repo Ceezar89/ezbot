@@ -37,6 +37,10 @@ public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
 
     public abstract void IncrementSingle();
     public abstract bool CanIncrement();
+    public abstract IIndicatorParameter DeepClone();
+    public abstract List<ParameterDescriptor> GetProperties();
+    public abstract IIndicatorParameter GetRandomNeighbor(Random random);
+    public abstract void UpdateFromDescriptor(ParameterDescriptor descriptor);
 
     public override int GetHashCode()
     {

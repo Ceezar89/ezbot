@@ -1,4 +1,4 @@
-namespace EzBot.Services.Strategy;
+namespace EzBot.Core.Strategy;
 
 public enum StrategyType
 {

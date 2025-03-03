@@ -2,25 +2,58 @@ namespace EzBot.Core.IndicatorParameter;
 
 public class TrendiloParameter : IndicatorParameterBase
 {
-    private int _smoothing = 1;
-    private int _lookback = 50;
-    private double _almaOffset = 0.85;
+    private int _smoothing = 2;
+    private int _lookback = 40;
+    private double _almaOffset = 0.8;
     private int _almaSigma = 6;
     private double _bandMultiplier = 1.0;
 
     // Ranges
-    private static readonly (int Min, int Max) SmoothingRange = (1, 10);
-    private static readonly (int Min, int Max) LookbackRange = (20, 200);
-    private static readonly (double Min, double Max) AlmaOffsetRange = (0.1, 2.0);
-    private static readonly (int Min, int Max) AlmaSigmaRange = (1, 20);
-    private static readonly (double Min, double Max) BandMultiplierRange = (0.5, 2.0);
+    private static readonly (int Min, int Max) SmoothingRange = (2, 10);
+    private static readonly (int Min, int Max) LookbackRange = (10, 200);
+    private static readonly (double Min, double Max) AlmaOffsetRange = (0.2, 2.0);
+    private static readonly (int Min, int Max) AlmaSigmaRange = (2, 20);
+    private static readonly (double Min, double Max) BandMultiplierRange = (0.2, 2.0);
 
     // Steps
-    private const int SmoothingRangeStep = 1;
+    private const int SmoothingRangeStep = 2;
     private const int LookbackRangeStep = 10;
-    private const double AlmaOffsetRangeStep = 0.1;
-    private const int AlmaSigmaRangeStep = 1;
-    private const double BandMultiplierRangeStep = 0.1;
+    private const double AlmaOffsetRangeStep = 0.2;
+    private const int AlmaSigmaRangeStep = 2;
+    private const double BandMultiplierRangeStep = 0.2;
+
+    public override List<ParameterDescriptor> GetProperties()
+    {
+        return [
+            new ParameterDescriptor(_smoothing, SmoothingRange.Min, SmoothingRange.Max, SmoothingRangeStep, "Smoothing"),
+            new ParameterDescriptor(_lookback, LookbackRange.Min, LookbackRange.Max, LookbackRangeStep, "Lookback"),
+            new ParameterDescriptor(_almaOffset, AlmaOffsetRange.Min, AlmaOffsetRange.Max, AlmaOffsetRangeStep, "Alma Offset"),
+            new ParameterDescriptor(_almaSigma, AlmaSigmaRange.Min, AlmaSigmaRange.Max, AlmaSigmaRangeStep, "Alma Sigma"),
+            new ParameterDescriptor(_bandMultiplier, BandMultiplierRange.Min, BandMultiplierRange.Max, BandMultiplierRangeStep, "Band Multiplier")
+        ];
+    }
+
+    public override void UpdateFromDescriptor(ParameterDescriptor descriptor)
+    {
+        switch (descriptor.Name)
+        {
+            case "Smoothing":
+                Smoothing = (int)descriptor.Value;
+                break;
+            case "Lookback":
+                Lookback = (int)descriptor.Value;
+                break;
+            case "Alma Offset":
+                AlmaOffset = (double)descriptor.Value;
+                break;
+            case "Alma Sigma":
+                AlmaSigma = (int)descriptor.Value;
+                break;
+            case "Band Multiplier":
+                BandMultiplier = (double)descriptor.Value;
+                break;
+        }
+    }
 
     public int Smoothing
     {
@@ -91,6 +124,30 @@ public class TrendiloParameter : IndicatorParameterBase
             || AlmaOffset < AlmaOffsetRange.Max
             || AlmaSigma < AlmaSigmaRange.Max
             || BandMultiplier < BandMultiplierRange.Max;
+    }
+
+    public override TrendiloParameter DeepClone()
+    {
+        return new TrendiloParameter(Name, Smoothing, Lookback, AlmaOffset, AlmaSigma, BandMultiplier);
+    }
+
+    public override TrendiloParameter GetRandomNeighbor(Random random)
+    {
+        // Calculate how many steps are possible in each range
+        int smoothingSteps = (SmoothingRange.Max - SmoothingRange.Min) / SmoothingRangeStep + 1;
+        int lookbackSteps = (LookbackRange.Max - LookbackRange.Min) / LookbackRangeStep + 1;
+        int almaSigmaSteps = (AlmaSigmaRange.Max - AlmaSigmaRange.Min) / AlmaSigmaRangeStep + 1;
+        int almaOffsetSteps = (int)Math.Floor((AlmaOffsetRange.Max - AlmaOffsetRange.Min) / AlmaOffsetRangeStep) + 1;
+        int bandMultiplierSteps = (int)Math.Floor((BandMultiplierRange.Max - BandMultiplierRange.Min) / BandMultiplierRangeStep) + 1;
+
+        // Choose a random step for each parameter
+        var smoothing = SmoothingRange.Min + (random.Next(smoothingSteps) * SmoothingRangeStep);
+        var lookback = LookbackRange.Min + (random.Next(lookbackSteps) * LookbackRangeStep);
+        var almaSigma = AlmaSigmaRange.Min + (random.Next(almaSigmaSteps) * AlmaSigmaRangeStep);
+        var almaOffset = AlmaOffsetRange.Min + (random.Next(almaOffsetSteps) * AlmaOffsetRangeStep);
+        var bandMultiplier = BandMultiplierRange.Min + (random.Next(bandMultiplierSteps) * BandMultiplierRangeStep);
+
+        return new TrendiloParameter(Name, smoothing, lookback, almaOffset, almaSigma, bandMultiplier);
     }
 
     protected override int GetAdditionalHashCodeComponents()

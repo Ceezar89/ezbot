@@ -15,6 +15,27 @@ public class EtmaParameter : IndicatorParameterBase
     private const int LengthRangeStep = 1;
     private const int SignalStrengthRangeStep = 1;
 
+    public override List<ParameterDescriptor> GetProperties()
+    {
+        return [
+            new ParameterDescriptor(_length, LengthRange.Min, LengthRange.Max, LengthRangeStep, "Length"),
+            new ParameterDescriptor((int)_signalStrength, SignalStrengthRange.Min, SignalStrengthRange.Max, SignalStrengthRangeStep, "Signal Strength")
+        ];
+    }
+
+    public override void UpdateFromDescriptor(ParameterDescriptor descriptor)
+    {
+        switch (descriptor.Name)
+        {
+            case "Length":
+                Length = (int)descriptor.Value;
+                break;
+            case "Signal Strength":
+                SignalStrength = (SignalStrength)(int)descriptor.Value;
+                break;
+        }
+    }
+
     public int Length
     {
         get => _length;
@@ -54,6 +75,24 @@ public class EtmaParameter : IndicatorParameterBase
         {
             _signalStrength = (SignalStrength)signalStrengthInt;
         }
+    }
+
+    public override EtmaParameter DeepClone()
+    {
+        return new EtmaParameter(Length, SignalStrength);
+    }
+
+    public override EtmaParameter GetRandomNeighbor(Random random)
+    {
+        // Calculate how many steps are possible in each range
+        int lengthSteps = (LengthRange.Max - LengthRange.Min) / LengthRangeStep + 1;
+        int signalStrengthSteps = (SignalStrengthRange.Max - SignalStrengthRange.Min) / SignalStrengthRangeStep + 1;
+
+        // Choose a random step for each parameter
+        var length = LengthRange.Min + (random.Next(lengthSteps) * LengthRangeStep);
+        var signalStrength = (SignalStrength)(SignalStrengthRange.Min + (random.Next(signalStrengthSteps) * SignalStrengthRangeStep));
+
+        return new EtmaParameter(length, signalStrength);
     }
 
     public override bool CanIncrement()

@@ -19,6 +19,35 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private const int LowVolumeRangeStep = 5;
     private const int NormalHighVolumeRangeRangeStep = 5;
 
+    public override List<ParameterDescriptor> GetProperties()
+    {
+        return [
+            new ParameterDescriptor(_volumePeriod, VolumePeriodRange.Min, VolumePeriodRange.Max, VolumePeriodRangeStep, "Volume Period"),
+            new ParameterDescriptor(_highVolume, HighVolumeRange.Min, HighVolumeRange.Max, HighVolumeRangeStep, "High Volume"),
+            new ParameterDescriptor(_lowVolume, LowVolumeRange.Min, LowVolumeRange.Max, LowVolumeRangeStep, "Low Volume"),
+            new ParameterDescriptor(_normalHighVolumeRange, NormalHighVolumeRangeRange.Min, NormalHighVolumeRangeRange.Max, NormalHighVolumeRangeRangeStep, "Normal High Volume Range")
+        ];
+    }
+
+    public override void UpdateFromDescriptor(ParameterDescriptor descriptor)
+    {
+        switch (descriptor.Name)
+        {
+            case "Volume Period":
+                VolumePeriod = (int)descriptor.Value;
+                break;
+            case "High Volume":
+                HighVolume = (int)descriptor.Value;
+                break;
+            case "Low Volume":
+                LowVolume = (int)descriptor.Value;
+                break;
+            case "Normal High Volume Range":
+                NormalHighVolumeRange = (int)descriptor.Value;
+                break;
+        }
+    }
+
     public int VolumePeriod
     {
         get => _volumePeriod;
@@ -73,6 +102,28 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
             || HighVolume < HighVolumeRange.Max
             || LowVolume < LowVolumeRange.Max
             || NormalHighVolumeRange < NormalHighVolumeRangeRange.Max;
+    }
+
+    public override NormalizedVolumeParameter DeepClone()
+    {
+        return new NormalizedVolumeParameter(VolumePeriod, HighVolume, LowVolume, NormalHighVolumeRange);
+    }
+
+    public override NormalizedVolumeParameter GetRandomNeighbor(Random random)
+    {
+        // Calculate how many steps are possible in each range
+        int volumePeriodSteps = (VolumePeriodRange.Max - VolumePeriodRange.Min) / VolumePeriodRangeStep + 1;
+        int highVolumeSteps = (HighVolumeRange.Max - HighVolumeRange.Min) / HighVolumeRangeStep + 1;
+        int lowVolumeSteps = (LowVolumeRange.Max - LowVolumeRange.Min) / LowVolumeRangeStep + 1;
+        int normalHighVolumeRangeSteps = (NormalHighVolumeRangeRange.Max - NormalHighVolumeRangeRange.Min) / NormalHighVolumeRangeRangeStep + 1;
+
+        // Choose a random step for each parameter
+        var volumePeriod = VolumePeriodRange.Min + (random.Next(volumePeriodSteps) * VolumePeriodRangeStep);
+        var highVolume = HighVolumeRange.Min + (random.Next(highVolumeSteps) * HighVolumeRangeStep);
+        var lowVolume = LowVolumeRange.Min + (random.Next(lowVolumeSteps) * LowVolumeRangeStep);
+        var normalHighVolumeRange = NormalHighVolumeRangeRange.Min + (random.Next(normalHighVolumeRangeSteps) * NormalHighVolumeRangeRangeStep);
+
+        return new NormalizedVolumeParameter(volumePeriod, highVolume, lowVolume, normalHighVolumeRange);
     }
 
     protected override int GetAdditionalHashCodeComponents()

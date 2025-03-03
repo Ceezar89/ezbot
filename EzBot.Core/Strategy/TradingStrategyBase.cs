@@ -3,10 +3,20 @@ using EzBot.Models;
 
 namespace EzBot.Core.Strategy;
 
-public abstract class TradingStrategyBase(IndicatorCollection Indicators) : ITradingStrategy
+public abstract class TradingStrategyBase : ITradingStrategy
 {
-    private readonly IndicatorCollection _indicators = Indicators;
+    private readonly IndicatorCollection _indicators;
     protected readonly TradingSignals _signals = new();
+
+    protected TradingStrategyBase(IndicatorCollection indicators)
+    {
+        ArgumentNullException.ThrowIfNull(indicators);
+
+        if (indicators.Count == 0)
+            throw new ArgumentException("Indicator collection cannot be empty", nameof(indicators));
+
+        _indicators = indicators;
+    }
 
     protected abstract TradeType ExecuteStrategy();
 
@@ -14,7 +24,7 @@ public abstract class TradingStrategyBase(IndicatorCollection Indicators) : ITra
     {
         ArgumentNullException.ThrowIfNull(bars);
 
-        _indicators.UpdateAll(bars);
+        _indicators.UpdateAll(bars); // actual work is done here
         _signals.Clear();
 
         foreach (var indicator in _indicators)

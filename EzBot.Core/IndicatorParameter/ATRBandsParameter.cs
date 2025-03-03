@@ -19,6 +19,36 @@ public class AtrBandsParameter : IndicatorParameterBase
     private const double MultiplierLowerRangeStep = 0.5;
     private const double RiskRewardRatioRangeStep = 0.1;
 
+    public override List<ParameterDescriptor> GetProperties()
+    {
+        return [
+            new ParameterDescriptor(_period, PeriodRange.Min, PeriodRange.Max, PeriodRangeStep, "Period"),
+            new ParameterDescriptor(_multiplierUpper, MultiplierUpperRange.Min, MultiplierUpperRange.Max, MultiplierUpperRangeStep, "Multiplier Upper"),
+            new ParameterDescriptor(_multiplierLower, MultiplierLowerRange.Min, MultiplierLowerRange.Max, MultiplierLowerRangeStep, "Multiplier Lower"),
+            new ParameterDescriptor(_riskRewardRatio, RiskRewardRatioRange.Min, RiskRewardRatioRange.Max, RiskRewardRatioRangeStep, "Risk Reward Ratio")
+        ];
+    }
+
+    public override void UpdateFromDescriptor(ParameterDescriptor descriptor)
+    {
+        switch (descriptor.Name)
+        {
+            case "Period":
+                Period = (int)descriptor.Value;
+                break;
+            case "Multiplier Upper":
+                MultiplierUpper = (double)descriptor.Value;
+                break;
+            case "Multiplier Lower":
+                MultiplierLower = (double)descriptor.Value;
+                break;
+            case "Risk Reward Ratio":
+                RiskRewardRatio = (double)descriptor.Value;
+                break;
+        }
+    }
+
+
     public int Period
     {
         get => _period;
@@ -77,6 +107,28 @@ public class AtrBandsParameter : IndicatorParameterBase
                 || MultiplierUpper < MultiplierUpperRange.Max
                 || MultiplierLower < MultiplierLowerRange.Max
                 || RiskRewardRatio < RiskRewardRatioRange.Max;
+    }
+
+    public override AtrBandsParameter DeepClone()
+    {
+        return new AtrBandsParameter(Name, Period, MultiplierUpper, MultiplierLower, RiskRewardRatio);
+    }
+
+    public override AtrBandsParameter GetRandomNeighbor(Random random)
+    {
+        // Calculate how many steps are possible in each range
+        int periodSteps = (PeriodRange.Max - PeriodRange.Min) / PeriodRangeStep + 1;
+        int multiplierUpperSteps = (int)Math.Floor((MultiplierUpperRange.Max - MultiplierUpperRange.Min) / MultiplierUpperRangeStep) + 1;
+        int multiplierLowerSteps = (int)Math.Floor((MultiplierLowerRange.Max - MultiplierLowerRange.Min) / MultiplierLowerRangeStep) + 1;
+        int riskRewardRatioSteps = (int)Math.Floor((RiskRewardRatioRange.Max - RiskRewardRatioRange.Min) / RiskRewardRatioRangeStep) + 1;
+
+        // Choose a random step for each parameter
+        var period = PeriodRange.Min + (random.Next(periodSteps) * PeriodRangeStep);
+        var multiplierUpper = MultiplierUpperRange.Min + (random.Next(multiplierUpperSteps) * MultiplierUpperRangeStep);
+        var multiplierLower = MultiplierLowerRange.Min + (random.Next(multiplierLowerSteps) * MultiplierLowerRangeStep);
+        var riskRewardRatio = RiskRewardRatioRange.Min + (random.Next(riskRewardRatioSteps) * RiskRewardRatioRangeStep);
+
+        return new AtrBandsParameter(Name, period, multiplierUpper, multiplierLower, riskRewardRatio);
     }
 
     protected override int GetAdditionalHashCodeComponents()

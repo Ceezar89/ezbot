@@ -7,4 +7,7 @@
   <ItemGroup>
     <PackageReference Include="Polly" Version="8.5.2" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\EzBot.Models\EzBot.Models.csproj" />
+  </ItemGroup>
 </Project>
