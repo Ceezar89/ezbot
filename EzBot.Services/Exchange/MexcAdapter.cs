@@ -9,6 +9,14 @@ public class MexcAdapter : ExchangeAdapterBase
     protected override string KlineEndpoint => "/api/v1/contract/kline/";
     protected override string OrderEndpoint => "/api/v1/private/order/submit";
     protected override string TestOrderEndpoint => "/api/v1/private/order/test";
+    protected override string QueryOrderEndpoint => "/api/v1/private/order/get";
+    protected override string CancelOrderEndpoint => "/api/v1/private/order/cancel";
+    protected override string CancelAllOrdersEndpoint => "/api/v1/private/order/cancel_all";
+    protected override string LeverageEndpoint => "/api/v1/private/position/change_leverage";
+    protected override string MarginTypeEndpoint => "/api/v1/private/position/isolated/switch";
+    protected override string PositionModeEndpoint => "/api/v1/private/position/position_mode/change";
+    protected override string PositionInfoEndpoint => "/api/v1/private/position/open_positions";
+    protected override string AccountBalanceEndpoint => "/api/v1/private/account/assets";
 
     // Override mapping methods
     protected override string MapSymbol(CoinPair symbol) => symbol switch
@@ -39,13 +47,21 @@ public class MexcAdapter : ExchangeAdapterBase
     // Implement trade type mapping for MEXC
     public override string MapTradeType(TradeType tradeType) => tradeType switch
     {
-        TradeType.Long => "1", // MEXC uses "1" for BUY
-        TradeType.Short => "2", // MEXC uses "2" for SELL
+        TradeType.Long => "1", // MEXC uses "1" for open long
+        TradeType.Short => "3", // MEXC uses "3" for open short
         _ => throw new ArgumentOutOfRangeException(nameof(tradeType), "Invalid trade type for order execution")
     };
 
     // Implement order type mapping for MEXC
-    public override string MapOrderType() => "1"; // 1 for Market orders in MEXC
+    public override string MapOrderType() => "5"; // 5 for Market orders in MEXC
+
+    // Override margin type mapping for MEXC
+    public override string MapMarginType(string marginType) => marginType.ToUpperInvariant() switch
+    {
+        "ISOLATED" => "1", // 1 for isolated margin in MEXC
+        "CROSSED" => "2",  // 2 for cross margin in MEXC
+        _ => "1"           // Default to isolated as per requirements
+    };
 
     // TODO: Implement trade endpoint
     // public string GetTradeEndpoint() => "/api/v3/order";

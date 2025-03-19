@@ -10,6 +10,14 @@ public class BinanceAdapter : ExchangeAdapterBase
     protected override string KlineEndpoint => "/fapi/v1/klines";
     protected override string OrderEndpoint => "/fapi/v1/order";
     protected override string TestOrderEndpoint => "/fapi/v1/order/test";
+    protected override string QueryOrderEndpoint => "/fapi/v1/order";
+    protected override string CancelOrderEndpoint => "/fapi/v1/order";
+    protected override string CancelAllOrdersEndpoint => "/fapi/v1/allOpenOrders";
+    protected override string LeverageEndpoint => "/fapi/v1/leverage";
+    protected override string MarginTypeEndpoint => "/fapi/v1/marginType";
+    protected override string PositionModeEndpoint => "/fapi/v1/positionSide/dual";
+    protected override string PositionInfoEndpoint => "/fapi/v3/positionRisk";
+    protected override string AccountBalanceEndpoint => "/fapi/v3/balance";
 
     // Override mapping methods
     protected override string MapSymbol(CoinPair symbol) => symbol switch
@@ -44,4 +52,11 @@ public class BinanceAdapter : ExchangeAdapterBase
     };
 
     public override string MapOrderType() => "MARKET"; // Using market orders for simplicity
+
+    public override string MapMarginType(string marginType) => marginType.ToUpperInvariant() switch
+    {
+        "ISOLATED" => "ISOLATED",
+        "CROSSED" => "CROSSED",
+        _ => "ISOLATED" // Default to isolated as per requirements
+    };
 }

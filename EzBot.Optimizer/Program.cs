@@ -149,14 +149,7 @@ try
             Console.WriteLine($"  Backtest Duration: {best.BacktestDurationDays} days");
 
             // Save to file
-            // Create a static JsonSerializerOptions to be reused
-            var jsonOptions = GetJsonSerializerOptions();
-
-            // Helper method that returns cached JsonSerializerOptions
-            static JsonSerializerOptions GetJsonSerializerOptions()
-            {
-                return new JsonSerializerOptions { WriteIndented = true };
-            }
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
             string json = JsonSerializer.Serialize(result, jsonOptions);
             File.WriteAllText(outputFile, json);
             Console.WriteLine($"\nResults saved to {outputFile}");
