@@ -2,11 +2,17 @@ using EzBot.Models;
 
 namespace EzBot.Services.Exchange;
 
-public class BinanceAdapter : IExchangeAdapter
+public class BinanceAdapter : ExchangeAdapterBase
 {
-    private string BaseUrl { get; set; } = "https://fapi.binance.com";
-    private string KlineEndpoint { get; set; } = "/fapi/v1/klines";
-    private static string MapSymbol(CoinPair symbol) => symbol switch
+    // Override abstract properties with Binance-specific values
+    protected override string BaseUrl => "https://fapi.binance.com";
+    private string BaseUrlTestNet { get; } = "https://testnet.binancefuture.com";
+    protected override string KlineEndpoint => "/fapi/v1/klines";
+    protected override string OrderEndpoint => "/fapi/v1/order";
+    protected override string TestOrderEndpoint => "/fapi/v1/order/test";
+
+    // Override mapping methods
+    protected override string MapSymbol(CoinPair symbol) => symbol switch
     {
         CoinPair.BTCUSDT => "BTCUSDT",
         CoinPair.ETHUSDT => "ETHUSDT",
@@ -15,7 +21,7 @@ public class BinanceAdapter : IExchangeAdapter
         _ => throw new ArgumentOutOfRangeException(nameof(symbol))
     };
 
-    private static string MapInterval(Interval interval) => interval switch
+    protected override string MapInterval(Interval interval) => interval switch
     {
         Interval.OneMinute => "1m",
         Interval.ThreeMinutes => "3m",
@@ -27,10 +33,15 @@ public class BinanceAdapter : IExchangeAdapter
         _ => throw new ArgumentOutOfRangeException(nameof(interval))
     };
 
-    public string GetKlineRequestUri(CoinPair symbol, Interval interval) =>
-        $"{BaseUrl}{KlineEndpoint}?symbol={MapSymbol(symbol)}&interval={MapInterval(interval)}";
+    // Override the test endpoint method to use the testnet URL
+    public override string GetTestOrderEndpoint() => $"{BaseUrlTestNet}{TestOrderEndpoint}";
 
+    public override string MapTradeType(TradeType tradeType) => tradeType switch
+    {
+        TradeType.Long => "BUY",
+        TradeType.Short => "SELL",
+        _ => throw new ArgumentOutOfRangeException(nameof(tradeType), "Invalid trade type for order execution")
+    };
 
-    // TODO: Implement trade endpoint
-    // public string GetTradeEndpoint() => "/fapi/v1/order";
+    public override string MapOrderType() => "MARKET"; // Using market orders for simplicity
 }
