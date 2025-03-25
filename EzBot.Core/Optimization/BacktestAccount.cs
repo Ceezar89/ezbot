@@ -18,6 +18,7 @@ namespace EzBot.Core.Optimization
         public bool IsLiquidated { get; set; } = false;
         public double StartUnixTime { get; set; } = 0;
         public double EndUnixTime { get; set; } = 0;
+        public int MaxDaysInactive { get; set; } = 0;
 
         public double CurrentBalance => _currentBalance;
 
@@ -107,11 +108,6 @@ namespace EzBot.Core.Optimization
                 : (endDate > startDate ? 1 : 0);
         }
 
-        public void LiquidateAccount()
-        {
-            IsLiquidated = true;
-        }
-
         public BacktestResult GenerateResult()
         {
             // Close any remaining positions at their last known value
@@ -123,9 +119,6 @@ namespace EzBot.Core.Optimization
             double totalProfit = _completedTrades.Where(t => t.Profit > 0).Sum(t => t.Profit);
             double totalLoss = Math.Abs(_completedTrades.Where(t => t.Profit <= 0).Sum(t => t.Profit));
 
-            // Calculate profit factor, avoid division by zero
-            double profitFactor = totalLoss == 0 ? (totalProfit > 0 ? double.MaxValue : 0) : totalProfit / totalLoss;
-
             return new BacktestResult
             {
                 InitialBalance = _initialBalance,
@@ -133,14 +126,13 @@ namespace EzBot.Core.Optimization
                 TotalTrades = _completedTrades.Count,
                 WinningTrades = winningTrades,
                 LosingTrades = losingTrades,
-                ProfitFactor = profitFactor,
                 MaxDrawdown = CalculateMaxDrawdown(),
                 SharpeRatio = CalculateSharpeRatio(),
                 Trades = _completedTrades,
                 BacktestDurationDays = CalculateDuration(),
                 StartDate = DateTimeOffset.FromUnixTimeSeconds((long)StartUnixTime).DateTime,
                 EndDate = DateTimeOffset.FromUnixTimeSeconds((long)EndUnixTime).DateTime,
-                IsValidResult = !IsLiquidated
+                MaxDaysInactive = MaxDaysInactive
             };
         }
 

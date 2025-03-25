@@ -10,7 +10,6 @@ public class BacktestResult
     public int LosingTrades { get; set; }
     public double MaxDrawdownPercent { get; set; }
     public double WinRate => TotalTrades > 0 ? (double)WinningTrades / TotalTrades * 100 : 0;
-    public double ProfitFactor { get; set; }
     public double MaxDrawdown { get; set; }
     public double SharpeRatio { get; set; }
     public List<BacktestTrade> Trades { get; set; } = [];
@@ -18,7 +17,7 @@ public class BacktestResult
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public int BacktestDurationDays { get; set; }
-    public bool IsValidResult = true;
+    public int MaxDaysInactive { get; set; }
 }
 
 public class BacktestTrade

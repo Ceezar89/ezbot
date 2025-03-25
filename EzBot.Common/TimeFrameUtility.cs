@@ -56,12 +56,13 @@ public static class TimeFrameUtility
             TimeFrame.Minute5 => "5m",
             TimeFrame.Minute15 => "15m",
             TimeFrame.Minute30 => "30m",
-            TimeFrame.Hour1 => "1h",
-            TimeFrame.Hour2 => "2h",
-            TimeFrame.Hour4 => "4h",
-            TimeFrame.Hour8 => "8h",
-            TimeFrame.Day1 => "1d",
-            TimeFrame.Week1 => "1w",
+            TimeFrame.OneHour => "1h",
+            TimeFrame.TwoHour => "2h",
+            TimeFrame.FourHour => "4h",
+            TimeFrame.EightHour => "8h",
+            TimeFrame.TwelveHour => "12h",
+            TimeFrame.OneDay => "1d",
+            TimeFrame.OneWeek => "1w",
             _ => $"{(int)timeFrame}m"
         };
     }
@@ -92,10 +93,11 @@ public static class TimeFrameUtility
             {
                 return hours switch
                 {
-                    1 => TimeFrame.Hour1,
-                    2 => TimeFrame.Hour2,
-                    4 => TimeFrame.Hour4,
-                    8 => TimeFrame.Hour8,
+                    1 => TimeFrame.OneHour,
+                    2 => TimeFrame.TwoHour,
+                    4 => TimeFrame.FourHour,
+                    8 => TimeFrame.EightHour,
+                    12 => TimeFrame.TwelveHour,
                     _ => (TimeFrame)(hours * 60) // Convert hours to minutes
                 };
             }
@@ -104,14 +106,14 @@ public static class TimeFrameUtility
         {
             if (int.TryParse(input[0..^1], out int days))
             {
-                return days == 1 ? TimeFrame.Day1 : (TimeFrame)(days * 1440);
+                return days == 1 ? TimeFrame.OneDay : (TimeFrame)(days * 1440);
             }
         }
         else if (input.EndsWith("w"))
         {
             if (int.TryParse(input[0..^1], out int weeks))
             {
-                return weeks == 1 ? TimeFrame.Week1 : (TimeFrame)(weeks * 10080);
+                return weeks == 1 ? TimeFrame.OneWeek : (TimeFrame)(weeks * 10080);
             }
         }
 

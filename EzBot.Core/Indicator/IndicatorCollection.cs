@@ -102,8 +102,10 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         return [.. cloneList];
     }
 
-    public void RandomizeParameters(Random random)
+    public void RandomizeParameters()
     {
+        Random random = new(Guid.NewGuid().GetHashCode());
+
         if (_indicators.Count == 0)
             throw new InvalidOperationException("Cannot randomize parameters for an empty collection");
 

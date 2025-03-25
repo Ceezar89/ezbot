@@ -1,5 +1,4 @@
 ﻿using EzBot.Common;
-using EzBot.Core.Factory;
 using EzBot.Core.Optimization;
 using EzBot.Core.Strategy;
 using EzBot.Models;
@@ -7,14 +6,12 @@ using System.Globalization;
 using System.Text.Json;
 
 // Configure command-line options
-// string? dataFilePath = "C:\\Users\\Ceezar89\\Desktop\\git\\ezbot\\Data\\btc_data.example.csv";
 string? dataFilePath = "C:\\Users\\Ceezar89\\Desktop\\git\\ezbot\\Data\\btcusd_1-min_data.csv";
 StrategyType strategyType = StrategyType.PrecisionTrend;
-TimeFrame timeFrame = TimeFrame.Hour1;
+TimeFrame timeFrame = TimeFrame.OneHour;
 double initialBalance = 1000;
-double feePercentage = 0.025;
-string outputFile = "optimization_result.json";
-int iterations = 1000;
+double feePercentage = 0.04;
+string outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + ".json";
 
 // Parse command line arguments
 if (args.Length > 0)
@@ -26,11 +23,6 @@ if (args.Length > 0)
             case "-f":
             case "--file":
                 if (i + 1 < args.Length) dataFilePath = args[++i];
-                break;
-            case "-i":
-            case "--iterations":
-                if (i + 1 < args.Length && int.TryParse(args[++i], out int iters))
-                    iterations = iters;
                 break;
             case "-s":
             case "--strategy":
@@ -77,35 +69,35 @@ if (string.IsNullOrEmpty(dataFilePath))
 }
 try
 {
-    // Load historical data
-    Console.WriteLine($"Loading historical data from {dataFilePath}...");
-    var historicalData = CsvDataUtility.LoadBarDataFromCsv(dataFilePath);
-    // keep the last 50_000 bars
-    // historicalData = [.. historicalData.Skip(historicalData.Count - 50_000)];
-    Console.WriteLine($"Loaded {historicalData.Count} bars of historical data.");
-
-    // Start the optimization process
-    string timeframeDisplay = TimeFrameUtility.GetTimeFrameDisplayName(timeFrame);
-    Console.WriteLine($"\nOptimizing {strategyType} strategy on {timeframeDisplay} timeframe...");
-    Console.WriteLine($"Initial balance: ${initialBalance}, Fee: {feePercentage}%");
-
-    // Create a progress callback
-    static void progressCallback(int current, int total)
-    {
-        DisplayProgressBar(current, total);
-    }
-
     while (true)
     {
+        // Load historical data
+        Console.WriteLine("");
+        Console.WriteLine($"Loading historical data from {dataFilePath}...");
+        var historicalData = CsvDataUtility.LoadBarDataFromCsv(dataFilePath);
+        // keep the last 1_000_000 bars
+        historicalData = [.. historicalData.Skip(historicalData.Count - 1_000_000)];
+        // format count to be readable with commas  
+        Console.WriteLine($"Loaded {historicalData.Count:N0} bars of historical data.");
+
+        // Start the optimization process
+        string timeframeDisplay = TimeFrameUtility.GetTimeFrameDisplayName(timeFrame);
+        Console.WriteLine($"\nOptimizing {strategyType} strategy on {timeframeDisplay} timeframe.");
+        Console.WriteLine($"Initial balance: ${initialBalance}, Fee: {feePercentage}%");
+
+        // Create a progress callback
+        static void progressCallback(int current, int total)
+        {
+            DisplayProgressBar(current, total);
+        }
 
         // Run optimization with progress tracking
         Console.WriteLine("\nProgress:");
 
-        var result = new OptimizerRunner(
+        var result = new StrategyOptimizer(
             historicalData,
             strategyType,
             timeFrame,
-            iterations,
             progressCallback)
         .FindOptimalParameters();
 
@@ -123,9 +115,6 @@ try
         }
         else
         {
-            // Display results
-            Console.WriteLine($"Tested {result.TotalCombinationsTested} parameter combinations on {timeframeDisplay} timeframe");
-
             // Show best parameters
             Console.WriteLine("\nBest Parameters:");
             foreach (var param in result.BestParameters)
@@ -141,18 +130,49 @@ try
             Console.WriteLine($"  Net Profit: ${best.NetProfit:F2} ({best.ReturnPercentage:F2}%)");
             Console.WriteLine($"  Win Rate: {best.WinRate:F2}% ({best.WinningTrades}/{best.TotalTrades})");
             Console.WriteLine($"  Total Trades: {best.TotalTrades}");
-            Console.WriteLine($"  Profit Factor: {best.ProfitFactor:F2}");
             Console.WriteLine($"  Max Drawdown: {best.MaxDrawdown:F2}%");
+            Console.WriteLine($"  Max Days Inactive: {best.MaxDaysInactive} days");
             Console.WriteLine($"  Sharpe Ratio: {best.SharpeRatio:F2}");
             Console.WriteLine($"  Start Date: {best.StartDate}");
             Console.WriteLine($"  End Date: {best.EndDate}");
-            Console.WriteLine($"  Backtest Duration: {best.BacktestDurationDays} days");
+            Console.WriteLine($"  Backtest Trading Days: {best.BacktestDurationDays} days");
 
             // Save to file
             var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-            string json = JsonSerializer.Serialize(result, jsonOptions);
-            File.WriteAllText(outputFile, json);
-            Console.WriteLine($"\nResults saved to {outputFile}");
+            bool shouldSave = true;
+
+            // Check if file exists and compare results
+            if (File.Exists(outputFile))
+            {
+                try
+                {
+                    string previousJson = File.ReadAllText(outputFile);
+                    var previousResult = JsonSerializer.Deserialize<OptimizationResult>(previousJson, jsonOptions);
+
+                    if (previousResult != null && previousResult.BacktestResult.NetProfit > best.NetProfit)
+                    {
+                        Console.WriteLine($"\nPrevious result in {outputFile} has better net profit (${previousResult.BacktestResult.NetProfit:F2} vs ${best.NetProfit:F2}).");
+                        Console.WriteLine("Current result not saved.");
+                        shouldSave = false;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"\nCurrent result has better net profit than previous result.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"\nError reading previous result: {ex.Message}");
+                    Console.WriteLine("Will save current result.");
+                }
+            }
+
+            if (shouldSave)
+            {
+                string json = JsonSerializer.Serialize(result, jsonOptions);
+                File.WriteAllText(outputFile, json);
+                Console.WriteLine($"\nResults saved to {outputFile}");
+            }
         }
     }
 }

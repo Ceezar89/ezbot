@@ -6,11 +6,11 @@ public enum TimeFrame
     Minute5 = 5,
     Minute15 = 15,
     Minute30 = 30,
-    Hour1 = 60,
-    Hour2 = 120,
-    Hour4 = 240,
-    Hour8 = 480,
-    Hour12 = 720,
-    Day1 = 1440,
-    Week1 = 10080
+    OneHour = 60,
+    TwoHour = 120,
+    FourHour = 240,
+    EightHour = 480,
+    TwelveHour = 720,
+    OneDay = 1440,
+    OneWeek = 10080
 }
