@@ -19,6 +19,8 @@ namespace EzBot.Core.Optimization
         public double StartUnixTime { get; set; } = 0;
         public double EndUnixTime { get; set; } = 0;
 
+        public double CurrentBalance => _currentBalance;
+
         public int OpenPosition(TradeType type, double price, double stopLoss, int barIndex)
         {
             // Console.WriteLine($"Opening {type} position at {price} with stop loss at {stopLoss}");
@@ -78,7 +80,7 @@ namespace EzBot.Core.Optimization
 
             // Return the margin that was locked
             double marginUsed = trade.EntryPrice * trade.PositionSize / _leverage;
-            _currentBalance += marginUsed + pnl;
+            _currentBalance += marginUsed;
 
             // Remove from active trades
             _activeTrades.Remove(tradeId);

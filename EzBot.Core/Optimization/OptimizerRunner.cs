@@ -140,7 +140,7 @@ namespace EzBot.Core.Optimization
             };
         }
 
-        public BacktestResult RunBacktest(ITradingStrategy strategy, List<BarData> historicalData)
+        private BacktestResult RunBacktest(ITradingStrategy strategy, List<BarData> historicalData)
         {
             var account = new BacktestAccount(initialBalance, feePercentage, leverage);
             Dictionary<int, TradeOrder> activeOrders = [];
