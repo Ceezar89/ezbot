@@ -9,7 +9,8 @@ public class BacktestResult
     public int WinningTrades { get; set; }
     public int LosingTrades { get; set; }
     public double MaxDrawdownPercent { get; set; }
-    public double WinRate => TotalTrades > 0 ? (double)WinningTrades / TotalTrades * 100 : 0;
+    public double WinRate => TotalTrades > 0 ? (double)WinningTrades / TotalTrades : 0;
+    public double WinRatePercent => TotalTrades > 0 ? (double)WinningTrades / TotalTrades * 100 : 0;
     public double MaxDrawdown { get; set; }
     public double SharpeRatio { get; set; }
     public List<BacktestTrade> Trades { get; set; } = [];

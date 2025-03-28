@@ -10,8 +10,9 @@ string? dataFilePath = "C:\\Users\\Ceezar89\\Desktop\\git\\ezbot\\Data\\btcusd_1
 StrategyType strategyType = StrategyType.PrecisionTrend;
 TimeFrame timeFrame = TimeFrame.OneHour;
 double initialBalance = 1000;
-double feePercentage = 0.04;
-string outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + ".json";
+double feePercentage = 0.05;
+int lookback = 1_000_000;
+string outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + "_" + (lookback / 60 / 24).ToString() + "d.json";
 
 // Parse command line arguments
 if (args.Length > 0)
@@ -28,6 +29,11 @@ if (args.Length > 0)
             case "--strategy":
                 if (i + 1 < args.Length && Enum.TryParse(args[++i], true, out StrategyType parsed))
                     strategyType = parsed;
+                break;
+            case "-l":
+            case "--lookback":
+                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookback))
+                    lookback = parsedLookback;
                 break;
             case "-t":
             case "--timeframe":
@@ -75,30 +81,22 @@ try
         Console.WriteLine("");
         Console.WriteLine($"Loading historical data from {dataFilePath}...");
         var historicalData = CsvDataUtility.LoadBarDataFromCsv(dataFilePath);
-        // keep the last 1_000_000 bars
-        historicalData = [.. historicalData.Skip(historicalData.Count - 1_000_000)];
-        // format count to be readable with commas  
-        Console.WriteLine($"Loaded {historicalData.Count:N0} bars of historical data.");
 
         // Start the optimization process
         string timeframeDisplay = TimeFrameUtility.GetTimeFrameDisplayName(timeFrame);
         Console.WriteLine($"\nOptimizing {strategyType} strategy on {timeframeDisplay} timeframe.");
         Console.WriteLine($"Initial balance: ${initialBalance}, Fee: {feePercentage}%");
 
-        // Create a progress callback
-        static void progressCallback(int current, int total)
-        {
-            DisplayProgressBar(current, total);
-        }
-
-        // Run optimization with progress tracking
-        Console.WriteLine("\nProgress:");
+        Console.WriteLine();
 
         var result = new StrategyOptimizer(
             historicalData,
             strategyType,
             timeFrame,
-            progressCallback)
+            initialBalance,
+            feePercentage,
+            lookback
+            )
         .FindOptimalParameters();
 
         // Show backtest results
@@ -128,7 +126,7 @@ try
 
             Console.WriteLine("\nBacktest Results:");
             Console.WriteLine($"  Net Profit: ${best.NetProfit:F2} ({best.ReturnPercentage:F2}%)");
-            Console.WriteLine($"  Win Rate: {best.WinRate:F2}% ({best.WinningTrades}/{best.TotalTrades})");
+            Console.WriteLine($"  Win Rate: {best.WinRatePercent:F2}% ({best.WinningTrades}/{best.TotalTrades})");
             Console.WriteLine($"  Total Trades: {best.TotalTrades}");
             Console.WriteLine($"  Max Drawdown: {best.MaxDrawdown:F2}%");
             Console.WriteLine($"  Max Days Inactive: {best.MaxDaysInactive} days");
@@ -181,22 +179,6 @@ catch (Exception ex)
     Console.WriteLine($"Error: {ex.Message}");
     Console.WriteLine(ex.StackTrace);
 }
-
-static void DisplayProgressBar(int current, int total)
-{
-    const int barWidth = 50;
-
-    // Calculate percentage and bar segments
-    double percent = (double)current / total;
-    int filledWidth = (int)Math.Floor(barWidth * percent);
-
-    // Build the progress bar string
-    string bar = "[" + new string('■', filledWidth) + new string(' ', barWidth - filledWidth) + "]";
-
-    // Display progress
-    Console.Write($"\r{bar} {current}/{total} ({percent:P2})");
-}
-
 
 static void PrintUsage()
 {

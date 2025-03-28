@@ -9,12 +9,25 @@ public abstract class IndicatorBase<TParameter>(TParameter parameter) : IIndicat
     protected TParameter Parameter { get; private set; } = parameter;
     private int? lastProcessedSignature;
 
-    public void SetBarData(BarDataCollection bars)
+    public void SetBarData(IBarDataCollection bars)
     {
-        if (lastProcessedSignature is null || lastProcessedSignature != bars.Signature)
+        if (bars is BarDataCollection collection)
         {
-            ProcessBarData(bars.Bars);
-            lastProcessedSignature = bars.Signature;
+            if (lastProcessedSignature is null || lastProcessedSignature != collection.Signature)
+            {
+                ProcessBarData(collection.Bars);
+                lastProcessedSignature = collection.Signature;
+            }
+        }
+        else
+        {
+            // For other implementations like BarDataCollectionView, process directly
+            var barsList = new List<BarData>(bars.Count);
+            for (int i = 0; i < bars.Count; i++)
+            {
+                barsList.Add(bars[i]);
+            }
+            ProcessBarData(barsList);
         }
     }
 

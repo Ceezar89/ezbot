@@ -87,6 +87,21 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         }
     }
 
+    // New method that updates indicators with a subset of bars defined by start and end indices
+    public void UpdateAllWithBoundary(List<BarData> bars, int startIndex, int endIndex)
+    {
+        if (startIndex < 0 || endIndex >= bars.Count || startIndex > endIndex)
+            throw new ArgumentOutOfRangeException($"Invalid indices: start={startIndex}, end={endIndex}, count={bars.Count}");
+
+        // Create a view of the data without allocating a new list
+        BarDataCollectionView barDataView = new(bars, startIndex, endIndex);
+
+        foreach (var indicator in _indicators)
+        {
+            indicator.SetBarData(barDataView);
+        }
+    }
+
     public IndicatorCollection DeepClone()
     {
         var cloneList = new List<IIndicator>();
