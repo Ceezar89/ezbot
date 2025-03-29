@@ -11,9 +11,9 @@ StrategyType strategyType = StrategyType.PrecisionTrend;
 TimeFrame timeFrame = TimeFrame.OneHour;
 double initialBalance = 1000;
 double feePercentage = 0.05;
-int lookback = 1_000_000;
+int lookback = 1500;
 int minTemperature = 10;
-double defaultCoolingRate = 0.85;
+double defaultCoolingRate = 0.80;
 int maxConcurrentTrades = 5;
 double maxDrawdownPercent = 30;
 int leverage = 10;
@@ -114,7 +114,7 @@ if (args.Length > 0)
 // If no output file is specified, generate one based on strategy type, timeframe, and lookback
 if (string.IsNullOrEmpty(outputFile))
 {
-    outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + "_" + (lookback / 60 / 24).ToString() + "d.json";
+    outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + "_" + lookback.ToString() + "d.json";
 }
 
 // If no data file is specified, ask for one or use default

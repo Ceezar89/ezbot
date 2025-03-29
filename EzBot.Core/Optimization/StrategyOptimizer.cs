@@ -16,9 +16,9 @@ namespace EzBot.Core.Optimization
         TimeFrame timeFrame = TimeFrame.OneHour,
         double initialBalance = 1000,
         double feePercentage = 0.05,
-        int lookbackBars = 1_000_000,
-        double minTemperature = 10.0,
-        double defaultCoolingRate = 0.85,
+        int lookbackDays = 1500,
+        double minTemperature = 15.0,
+        double defaultCoolingRate = 0.8,
         int maxConcurrentTrades = 5,
         double maxDrawdownPercent = 30,
         int leverage = 10,
@@ -57,7 +57,6 @@ namespace EzBot.Core.Optimization
         private long totalBacktestsRun = 0; // Total number of backtests run
         private long cachedBacktestsUsed = 0; // Total number of cached backtests used
         private readonly Lock metricsLock = new(); // Lock for thread-safe metrics updates
-        private const int DOUBLE_PRECISION = 4; // Precision for parameter discretization
         private double averageTemperature = 100.0; // Average temperature for progress reporting
         private DateTime lastSaveTime = DateTime.MinValue; // Track when we last saved results
         private const int SAVE_INTERVAL_SECONDS = 120; // Save every 2 minutes
@@ -69,7 +68,7 @@ namespace EzBot.Core.Optimization
         {
             totalStopwatch.Start();
 
-            List<BarData> historicalData = [.. fullHistoricalData.Skip(fullHistoricalData.Count - lookbackBars)];
+            List<BarData> historicalData = [.. fullHistoricalData.Skip(fullHistoricalData.Count - lookbackDays * 24 * 60)];
             Console.WriteLine($"Loaded {historicalData.Count:N0} bars of historical data.");
 
             // Convert the data to the desired timeframe
@@ -131,7 +130,7 @@ namespace EzBot.Core.Optimization
                 (bestParams.DeepClone(), bestResult, CalculateFitness(bestResult)));
 
             // Initialize the queue with multiple starting points derived from the best candidate
-            var parameterPerturbator = new ParameterPerturbator(DOUBLE_PRECISION);
+            var parameterPerturbator = new ParameterPerturbator();
 
             // Add the original unperturbed best parameters first to preserve high win-rate configuration
             sharedWorkQueue.Enqueue(new WorkItem
@@ -373,15 +372,14 @@ namespace EzBot.Core.Optimization
                         string previousJson = File.ReadAllText(outputFile);
                         var previousResult = JsonSerializer.Deserialize<OptimizationResult>(previousJson, jsonOptions);
 
-                        if (previousResult != null && previousResult.BacktestResult.NetProfit > currentBest.Result.NetProfit)
+                        // save if better result else do nothing
+                        if (previousResult != null && currentBest.Result.NetProfit > previousResult.BacktestResult.NetProfit)
                         {
-                            Console.WriteLine($"Previous result in {outputFile} has better net profit (${previousResult.BacktestResult.NetProfit:F2} vs ${currentBest.Result.NetProfit:F2}).");
-                            Console.WriteLine("Current result not saved.");
-                            shouldSave = false;
+                            Console.WriteLine($"Current result has better net profit than previous result. Saving...");
                         }
                         else
                         {
-                            Console.WriteLine($"Current result has better net profit than previous result. Saving...");
+                            shouldSave = false;
                         }
                     }
                     catch (Exception ex)
@@ -420,7 +418,7 @@ namespace EzBot.Core.Optimization
             CancellationToken cancellationToken
             )
         {
-            var parameterPerturbator = new ParameterPerturbator(DOUBLE_PRECISION);
+            var parameterPerturbator = new ParameterPerturbator();
             int searchAttempts = 0;
             const int MaxSearchAttempts = 100;
 
@@ -1162,7 +1160,7 @@ namespace EzBot.Core.Optimization
                 return;
 
             // Only save if we have valid results
-            if (result.BacktestResult.TotalTrades > 0)
+            if (result.BacktestResult.TotalTrades > minTotalTrades)
             {
                 bool shouldSave = true;
                 var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
@@ -1175,15 +1173,12 @@ namespace EzBot.Core.Optimization
                         string previousJson = File.ReadAllText(outputFile);
                         var previousResult = JsonSerializer.Deserialize<OptimizationResult>(previousJson, jsonOptions);
 
+                        // save if better result else do nothing
                         if (previousResult != null && previousResult.BacktestResult.NetProfit > result.BacktestResult.NetProfit)
                         {
                             Console.WriteLine($"\nPrevious result in {outputFile} has better net profit (${previousResult.BacktestResult.NetProfit:F2} vs ${result.BacktestResult.NetProfit:F2}).");
                             Console.WriteLine("Final result not saved.");
                             shouldSave = false;
-                        }
-                        else
-                        {
-                            Console.WriteLine($"\nCurrent result has better net profit than previous result.");
                         }
                     }
                     catch (Exception ex)
@@ -1292,9 +1287,8 @@ namespace EzBot.Core.Optimization
     }
 
     // Extract parameter perturbation to a separate class for better organization
-    public class ParameterPerturbator(int precision)
+    public class ParameterPerturbator()
     {
-        private readonly int _precision = precision;
 
         // Gets a hash code based on discretized parameter values
         public int GetDiscretizedHash(IndicatorCollection parameters)
@@ -1328,7 +1322,7 @@ namespace EzBot.Core.Optimization
                     if (param.Value is double dvalue)
                     {
                         // Round double values to reduce precision
-                        double rounded = Math.Round(dvalue, _precision);
+                        double rounded = Math.Round(dvalue, 1);
                         param.Value = rounded;
                         indicator_parameters.UpdateFromDescriptor(param);
                     }

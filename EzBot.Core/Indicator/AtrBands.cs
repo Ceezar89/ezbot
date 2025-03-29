@@ -61,8 +61,8 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
             else
                 ATRValues[i] = ((ATRValues[i - 1] * (Parameter.Period - 1)) + trueRange[i]) / Parameter.Period;
 
-            UpperBand[i] = SrcUpper[i] + ATRValues[i] * Parameter.MultiplierUpper;
-            LowerBand[i] = SrcLower[i] - ATRValues[i] * Parameter.MultiplierLower;
+            UpperBand[i] = SrcUpper[i] + ATRValues[i] * Parameter.Multiplier;
+            LowerBand[i] = SrcLower[i] - ATRValues[i] * Parameter.Multiplier;
 
             ShortTakeProfit[i] = currentPrice - (UpperBand[i] - currentPrice) * Parameter.RiskRewardRatio;
             LongTakeProfit[i] = currentPrice + (currentPrice - LowerBand[i]) * Parameter.RiskRewardRatio;
