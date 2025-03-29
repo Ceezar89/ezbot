@@ -17,14 +17,15 @@ namespace EzBot.Core.Optimization
         double initialBalance = 1000,
         double feePercentage = 0.05,
         int lookbackDays = 1500,
-        double minTemperature = 15.0,
-        double defaultCoolingRate = 0.8,
+        int threadCount = -1,
+        double minTemperature = 5.0,
+        double defaultCoolingRate = 0.95,
         int maxConcurrentTrades = 5,
         double maxDrawdownPercent = 30,
         int leverage = 10,
-        int daysInactiveLimit = 30,
+        int daysInactiveLimit = 10,
         double minWinRatePercent = 0.55,
-        int minTotalTrades = 30,
+        int minTotalTrades = 10,
         string outputFile = ""
         )
     {
@@ -44,13 +45,12 @@ namespace EzBot.Core.Optimization
         private readonly string outputFile = outputFile;
         private readonly ConcurrentBag<(IndicatorCollection Params, BacktestResult Result)> candidates = [];
 
-        // Changed to a concurrent queue for better performance with trimming
         private readonly ConcurrentQueue<(IndicatorCollection Params, BacktestResult Result, double Fitness)> results = [];
 
         // Track both tested hashes and a cache of backtests for similar parameter sets
         private readonly ConcurrentDictionary<int, byte> testedParameterHashes = new();
         private readonly ConcurrentDictionary<int, BacktestResult> backtestCache = new();
-        private readonly int maxResultsToKeep = Math.Max(1000, Environment.ProcessorCount * 250);
+        private readonly int maxResultsToKeep = Math.Max(1000, threadCount * 250);
 
         // Keep track of optimization metrics
         private readonly Stopwatch totalStopwatch = new(); // Total stopwatch for optimization duration
@@ -58,8 +58,29 @@ namespace EzBot.Core.Optimization
         private long cachedBacktestsUsed = 0; // Total number of cached backtests used
         private readonly Lock metricsLock = new(); // Lock for thread-safe metrics updates
         private double averageTemperature = 100.0; // Average temperature for progress reporting
+        private double lowestObservedTemperature = 100.0; // Track the lowest temperature we've seen
+        private int highTempInjectionCount = 0; // Track how many high temp work items we've injected
+        private const int MAX_HIGH_TEMP_INJECTIONS = 10; // Lower the limit
         private DateTime lastSaveTime = DateTime.MinValue; // Track when we last saved results
         private const int SAVE_INTERVAL_SECONDS = 120; // Save every 2 minutes
+
+        // For tracking and termination conditions
+        private const int MAX_ITERATIONS_WITHOUT_IMPROVEMENT = 2000;  // Terminate if no improvement for this many iterations
+        private readonly Lock globalImprovement_lock = new();
+        private double globalBestFitness = double.MinValue;
+        private int iterationsSinceGlobalImprovement = 0;
+        private double explorationRate = 1.0; // Controls how often we inject random exploration
+        private const double MIN_EXPLORATION_RATE = 0.05; // Minimum exploration to maintain
+        private double globalCoolingMultiplier = 1.0; // Can accelerate cooling when progress stalls
+        private readonly Queue<double> recentFitnessValues = new(10); // For convergence detection
+        private int convergenceCounter = 0;
+        private const int CONVERGENCE_CHECK_INTERVAL = 500;
+
+        private readonly Lock highTempLock = new();
+        private const double ABSOLUTE_MAX_TEMPERATURE = 100.0;
+
+        private DateTime lastCacheSaveTime = DateTime.MinValue;
+        private const int CACHE_SAVE_INTERVAL_SECONDS = 300; // Save cache every 5 minutes
 
         /// <summary>
         /// Find optimal parameters for the strategy using simulated annealing with work stealing.
@@ -68,6 +89,9 @@ namespace EzBot.Core.Optimization
         {
             totalStopwatch.Start();
 
+            // Load any existing backtest cache
+            LoadCacheIfExists();
+
             List<BarData> historicalData = [.. fullHistoricalData.Skip(fullHistoricalData.Count - lookbackDays * 24 * 60)];
             Console.WriteLine($"Loaded {historicalData.Count:N0} bars of historical data.");
 
@@ -75,7 +99,7 @@ namespace EzBot.Core.Optimization
             var timeframeData = TimeFrameUtility.ConvertTimeFrame(historicalData, timeFrame);
 
             // Determine the number of worker threads
-            int workerCount = Environment.ProcessorCount - 1;
+            int workerCount = threadCount;
             if (workerCount < 1) workerCount = 1;
 
             // Set minimum runtime to 2 minutes
@@ -84,7 +108,6 @@ namespace EzBot.Core.Optimization
 
             // Step 1: Find good initial candidates in parallel
             var candidateTasks = new List<Task>();
-            var cancellationTokenSource = new CancellationTokenSource();
 
             Console.WriteLine($"Starting {workerCount} randomization search tasks to find seed candidates.");
 
@@ -93,7 +116,7 @@ namespace EzBot.Core.Optimization
             {
                 candidateTasks.Add(Task.Run(() =>
                 {
-                    FindSeedCandidate(timeframeData, cancellationTokenSource.Token);
+                    FindSeedCandidate(timeframeData);
                 }));
             }
 
@@ -103,11 +126,7 @@ namespace EzBot.Core.Optimization
                 Thread.Sleep(100); // Short sleep to avoid tight loop
             }
 
-            // Cancel any remaining tasks once we have candidates
-            if (!candidates.IsEmpty)
-            {
-                cancellationTokenSource.Cancel();
-            }
+            Console.WriteLine($"Waiting for {candidateTasks.Count} randomization search tasks to complete...");
 
             // Wait for all tasks to complete
             Task.WaitAll([.. candidateTasks]);
@@ -118,9 +137,6 @@ namespace EzBot.Core.Optimization
             var (bestParams, bestResult) = candidates
                 .OrderByDescending(c => CalculateFitness(c.Result))
                 .First();
-
-            Console.WriteLine($"Using best candidate with fitness: {CalculateFitness(bestResult):F2} and win rate: {bestResult.WinRatePercent:F2}% as seed.");
-            Console.WriteLine($"Total unique parameter combinations tested: {testedParameterHashes.Count:N0}");
 
             // Create a shared work queue for all threads
             var sharedWorkQueue = new ConcurrentQueue<WorkItem>();
@@ -172,7 +188,7 @@ namespace EzBot.Core.Optimization
             // Add a periodic progress reporter
             var progressReporter = new Timer(_ => ReportProgress(globalBestResult), null, 5000, 5000);
 
-            Console.WriteLine($"Starting dynamic work distribution with {workerCount} workers.");
+            Console.WriteLine($"\nStarting dynamic work distribution with {workerCount} worker threads:\n");
 
             // Start worker tasks
             var workerTasks = new List<Task>();
@@ -207,10 +223,10 @@ namespace EzBot.Core.Optimization
                     Interlocked.Exchange(ref activeWorkers, workerCount);
 
                     // Inject new work items
-                    for (int i = 0; i < workerCount * 10; i++)
+                    for (int i = 0; i < workerCount * 5; i++) // Reduce from 10 to 5
                     {
                         var randomSeed = new Random(Guid.NewGuid().GetHashCode());
-                        if (i % 2 == 0)
+                        if (i % 2 == 0 && TryIncrementHighTempInjection()) // Use our high temp control method
                         {
                             // Add random exploration
                             var freshParams = new IndicatorCollection(strategyType);
@@ -218,7 +234,7 @@ namespace EzBot.Core.Optimization
                             sharedWorkQueue.Enqueue(new WorkItem
                             {
                                 Parameters = freshParams,
-                                Temperature = 100.0,
+                                Temperature = GetSafeTemperature(60.0), // Limit to 60 instead of 100
                                 PreviousBestWinRate = 0,
                                 IterationsSinceImprovement = 0,
                                 TotalIterations = 0,
@@ -236,7 +252,7 @@ namespace EzBot.Core.Optimization
                                 sharedWorkQueue.Enqueue(new WorkItem
                                 {
                                     Parameters = newParams,
-                                    Temperature = 60.0,
+                                    Temperature = GetSafeTemperature(40.0), // Limit to 40 instead of 60
                                     PreviousBestWinRate = 0,
                                     IterationsSinceImprovement = 0,
                                     TotalIterations = 0,
@@ -318,6 +334,10 @@ namespace EzBot.Core.Optimization
             // Log the total number of unique parameter combinations tested
             Console.WriteLine($"Total unique parameter combinations tested: {testedParameterHashes.Count:N0}");
 
+            // Add cache saving at the end of the method, just before returning the result
+            // Add right before the final return statement
+            SaveCacheIfNeeded(); // Save the final cache before exiting
+
             return new OptimizationResult
             {
                 BestParameters = bestParameters.ToDto(),
@@ -339,16 +359,20 @@ namespace EzBot.Core.Optimization
             Console.WriteLine($"Parameters tested: {testedParameterHashes.Count:N0}, Results collected: {results.Count:N0}");
             Console.WriteLine($"Backtests run: {totalBacktestsRun:N0}, cached hits: {cachedBacktestsUsed:N0} ({(cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed)):F1}%)");
 
-            // Add temperature information
-            double tempProgress = 100.0 * (1.0 - ((averageTemperature - minTemperature) / (100.0 - minTemperature)));
-
-            Console.WriteLine($"Current temperature: {averageTemperature:F2} (min: {minTemperature:F1})");
+            // Modified temperature section with better information
+            double tempProgress = Math.Min(100.0, Math.Max(0.0, 100.0 * (1.0 - ((averageTemperature - minTemperature) / (100.0 - minTemperature)))));
+            Console.WriteLine($"Average temperature: {averageTemperature:F2} (min observed: {lowestObservedTemperature:F2}, cooling: {tempProgress:F1}%)");
+            Console.WriteLine($"Iterations since improvement: {iterationsSinceGlobalImprovement}, Exploration rate: {explorationRate:F2}");
+            Console.WriteLine($"Global cooling multiplier: {globalCoolingMultiplier:F2}, High temp injections: {highTempInjectionCount}");
 
             Console.WriteLine("==================================================================");
             Console.WriteLine();
 
             // Periodically save the current best result
             SaveProgressIfNeeded(globalBest.Value);
+
+            // Also save the backtest cache periodically
+            SaveCacheIfNeeded();
         }
 
         private void SaveProgressIfNeeded((IndicatorCollection Params, BacktestResult Result, double Fitness) currentBest)
@@ -414,8 +438,7 @@ namespace EzBot.Core.Optimization
         }
 
         private void FindSeedCandidate(
-            List<BarData> timeframeData,
-            CancellationToken cancellationToken
+            List<BarData> timeframeData
             )
         {
             var parameterPerturbator = new ParameterPerturbator();
@@ -423,14 +446,9 @@ namespace EzBot.Core.Optimization
             const int MaxSearchAttempts = 100;
 
             // Keep searching until we find a good candidate
-            while (true)
+            while (candidates.IsEmpty)
             {
                 searchAttempts++;
-                // Check if cancellation was requested
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
 
                 // Create a random set of parameters
                 var candidateParams = new IndicatorCollection(strategyType);
@@ -455,7 +473,7 @@ namespace EzBot.Core.Optimization
                     candidateResult.MaxDrawdownPercent <= maxDrawdownPercent &&
                     candidateResult.WinRate >= minWinRatePercent)
                 {
-                    Console.WriteLine($"Found a good candidate with win rate: {candidateResult.WinRatePercent:F2}%, drawdown: {candidateResult.MaxDrawdownPercent:F2}%");
+                    Console.WriteLine($"Found a good seed candidate with fitness: {CalculateFitness(candidateResult):F2}, win rate: {candidateResult.WinRatePercent:F2}%, drawdown: {candidateResult.MaxDrawdownPercent:F2}%");
                     // Take a snapshot of the current candidates
                     var snapshot = candidates.ToArray();
 
@@ -487,12 +505,6 @@ namespace EzBot.Core.Optimization
                 {
                     Console.WriteLine($"Using fallback candidate with {candidateResult.TotalTrades} trades, win rate: {candidateResult.WinRatePercent:F2}%");
                     candidates.Add((candidateParams, candidateResult));
-                    return;
-                }
-
-                // Check if another thread has found a good candidate while we were searching
-                if (!candidates.IsEmpty)
-                {
                     return;
                 }
             }
@@ -527,9 +539,19 @@ namespace EzBot.Core.Optimization
                 int totalMoves = 0;
                 const int adaptationInterval = 50; // How often to adapt parameters based on success rate
 
+                // Periodically check termination conditions
+                int terminationCheckCounter = 0;
+
                 while (workQueue.TryDequeue(out var workItem))
                 {
                     itemsProcessed++;
+                    terminationCheckCounter++;
+
+                    // Check for early termination periodically
+                    if (terminationCheckCounter % 100 == 0 && workerId == 0)
+                    {
+                        CheckAndTerminate(workQueue, completionSignal, ref activeWorkers);
+                    }
 
                     // Process this work item (one iteration of simulated annealing)
                     var currentParams = workItem.Parameters;
@@ -544,8 +566,12 @@ namespace EzBot.Core.Optimization
                     {
                         lock (metricsLock)
                         {
-                            // Simple exponential moving average
-                            averageTemperature = averageTemperature * 0.95 + temperature * 0.05;
+                            // Use our improved temperature tracking
+                            UpdateAverageTemperature(temperature);
+
+                            // Update global status/exploration metrics
+                            UpdateExplorationRate();
+                            UpdateGlobalCooling();
                         }
                     }
 
@@ -587,12 +613,27 @@ namespace EzBot.Core.Optimization
                             TrimResultsCollection();
                         }
 
-                        // Check if this is the best result so far
+                        // Check if this is the best result so far and update global improvement tracking
                         var currentBest = globalBest.Value;
 
-                        if (currentFitness > currentBest.Fitness)
+                        lock (globalImprovement_lock)
                         {
-                            globalBest.Value = resultTuple;
+                            if (currentFitness > globalBestFitness)
+                            {
+                                globalBestFitness = currentFitness;
+                                iterationsSinceGlobalImprovement = 0;
+
+                                // Save the best result immediately when found
+                                if (currentFitness > currentBest.Fitness)
+                                {
+                                    globalBest.Value = resultTuple;
+                                    SaveProgressIfNeeded(globalBest.Value);
+                                }
+                            }
+                            else
+                            {
+                                iterationsSinceGlobalImprovement++;
+                            }
                         }
                     }
 
@@ -616,28 +657,33 @@ namespace EzBot.Core.Optimization
                     // Check for convergence - if thread local and global best are very close
                     if (threadLocalBest != null && globalBest.Value.Fitness > 0 &&
                         Math.Abs(threadLocalBest.Value.Fitness - globalBest.Value.Fitness) / globalBest.Value.Fitness < 0.01 &&
-                        random.NextDouble() < 0.2)
+                        random.NextDouble() < 0.2 * explorationRate) // Scale with exploration rate
                     {
-                        // With some probability, create a fresh random starting point
-                        var freshParams = new IndicatorCollection(strategyType);
-                        freshParams.RandomizeParameters();
-
-                        // Add a completely new work item
-                        workQueue.Enqueue(new WorkItem
+                        // Only inject high temperature items if we haven't injected too many already
+                        if (TryIncrementHighTempInjection() && iterationsSinceGlobalImprovement < 500)
                         {
-                            Parameters = freshParams,
-                            Temperature = 100.0, // Reset temperature
-                            PreviousBestWinRate = 0,
-                            IterationsSinceImprovement = 0,
-                            TotalIterations = 0,
-                            AdaptiveCoolingRate = defaultCoolingRate,
-                        });
+                            // With some probability, create a fresh random starting point
+                            var freshParams = new IndicatorCollection(strategyType);
+                            freshParams.RandomizeParameters();
+
+                            // Add a completely new work item with safe temperature
+                            double safeTemp = GetSafeTemperature(100.0);
+                            workQueue.Enqueue(new WorkItem
+                            {
+                                Parameters = freshParams,
+                                Temperature = safeTemp,
+                                PreviousBestWinRate = 0,
+                                IterationsSinceImprovement = 0,
+                                TotalIterations = 0,
+                                AdaptiveCoolingRate = defaultCoolingRate,
+                            });
+                        }
                     }
 
                     if (shouldStop)
                     {
                         // Occasionally reinject a perturbed version of the global best
-                        if (random.NextDouble() < 0.2)
+                        if (random.NextDouble() < 0.2 * explorationRate) // Scale with exploration rate
                         {
                             // Get global best params and create new exploration point
                             var bestParams = globalBest.Value.Params;
@@ -672,7 +718,7 @@ namespace EzBot.Core.Optimization
                     if (testedParameterHashes.ContainsKey(discretizedHash))
                     {
                         // Cool down and requeue if this is a duplicate
-                        workItem.Temperature *= coolingRate;
+                        workItem.Temperature = Math.Min(workItem.Temperature * coolingRate * globalCoolingMultiplier, ABSOLUTE_MAX_TEMPERATURE);
                         workItem.TotalIterations++;
                         workItem.IterationsSinceImprovement++;
                         workItem.AdaptiveCoolingRate = coolingRate;
@@ -698,7 +744,7 @@ namespace EzBot.Core.Optimization
                     if (candidateResult.TotalTrades == 0 || candidateResult.MaxDrawdownPercent > maxDrawdownPercent)
                     {
                         // Still add this iteration to the work queue with cooled temperature
-                        workItem.Temperature *= coolingRate;
+                        workItem.Temperature = Math.Min(workItem.Temperature * coolingRate * globalCoolingMultiplier, ABSOLUTE_MAX_TEMPERATURE);
                         workItem.TotalIterations++;
                         workItem.IterationsSinceImprovement++;
                         workItem.AdaptiveCoolingRate = coolingRate;
@@ -729,6 +775,20 @@ namespace EzBot.Core.Optimization
                             TrimResultsCollection();
                         }
 
+                        // Update global best tracking
+                        lock (globalImprovement_lock)
+                        {
+                            if (candidateFitness > globalBestFitness)
+                            {
+                                globalBestFitness = candidateFitness;
+                                iterationsSinceGlobalImprovement = 0;
+                            }
+                            else
+                            {
+                                iterationsSinceGlobalImprovement++;
+                            }
+                        }
+
                         // Update thread local best if needed
                         if (threadLocalBest == null || candidateFitness > threadLocalBest.Value.Fitness)
                         {
@@ -750,7 +810,7 @@ namespace EzBot.Core.Optimization
                         workQueue.Enqueue(new WorkItem
                         {
                             Parameters = candidateParams,
-                            Temperature = temperature * coolingRate,
+                            Temperature = Math.Min(temperature * coolingRate * globalCoolingMultiplier, ABSOLUTE_MAX_TEMPERATURE), // Apply temperature cap
                             PreviousBestWinRate = previousBestWinRate > 0 ? previousBestWinRate : currentWinRate,
                             IterationsSinceImprovement = winRateImproved ? 0 : iterationsSinceImprovement + 1,
                             TotalIterations = totalIterations + 1,
@@ -763,7 +823,7 @@ namespace EzBot.Core.Optimization
                         workQueue.Enqueue(new WorkItem
                         {
                             Parameters = currentParams,
-                            Temperature = temperature * coolingRate,
+                            Temperature = Math.Min(temperature * coolingRate * globalCoolingMultiplier, ABSOLUTE_MAX_TEMPERATURE), // Apply temperature cap
                             PreviousBestWinRate = previousBestWinRate > 0 ? previousBestWinRate : currentWinRate,
                             IterationsSinceImprovement = iterationsSinceImprovement + 1,
                             TotalIterations = totalIterations + 1,
@@ -771,8 +831,8 @@ namespace EzBot.Core.Optimization
                         });
                     }
 
-                    // Occasionally add diversity with different strategies
-                    if (random.NextDouble() < 0.05)
+                    // Occasionally add diversity with different strategies, scaled by exploration rate
+                    if (random.NextDouble() < 0.05 * explorationRate)
                     {
                         // Strategy 1: Use best from thread local cache
                         if (threadLocalBest.HasValue)
@@ -790,7 +850,7 @@ namespace EzBot.Core.Optimization
                             });
                         }
                     }
-                    else if (random.NextDouble() < 0.07)
+                    else if (random.NextDouble() < 0.07 * explorationRate)
                     {
                         // Strategy 2: Use global best (shared across all threads)
                         var bestGlobal = globalBest.Value;
@@ -809,20 +869,27 @@ namespace EzBot.Core.Optimization
                             });
                         }
                     }
-                    else if (random.NextDouble() < 0.03)
+                    else if (random.NextDouble() < 0.03 * explorationRate)
                     {
-                        // Strategy 3: Fresh random parameters for exploration
-                        var freshParams = new IndicatorCollection(strategyType);
-                        freshParams.RandomizeParameters();
-                        workQueue.Enqueue(new WorkItem
+                        // Only inject if we haven't hit our limit and we're still in early exploration
+                        if (TryIncrementHighTempInjection() && iterationsSinceGlobalImprovement < 500)
                         {
-                            Parameters = freshParams,
-                            Temperature = 100.0, // High temperature for exploration
-                            PreviousBestWinRate = 0,
-                            IterationsSinceImprovement = 0,
-                            TotalIterations = 0,
-                            AdaptiveCoolingRate = defaultCoolingRate,
-                        });
+                            // Strategy 3: Fresh random parameters for exploration
+                            var freshParams = new IndicatorCollection(strategyType);
+                            freshParams.RandomizeParameters();
+
+                            // Use safe temperature
+                            double safeTemp = GetSafeTemperature(70.0); // Lower from 100 to 70
+                            workQueue.Enqueue(new WorkItem
+                            {
+                                Parameters = freshParams,
+                                Temperature = safeTemp,
+                                PreviousBestWinRate = 0,
+                                IterationsSinceImprovement = 0,
+                                TotalIterations = 0,
+                                AdaptiveCoolingRate = defaultCoolingRate,
+                            });
+                        }
                     }
                 }
 
@@ -834,42 +901,72 @@ namespace EzBot.Core.Optimization
                 }
 
                 // If the queue is empty but there are still active workers, inject new work
+                // Scale the number of injections based on exploration rate
                 if (workQueue.IsEmpty && activeWorkers > 1)
                 {
-                    // Add diversity by creating fresh random parameters
-                    for (int i = 0; i < 5; i++)  // Add multiple items to increase chances of finding better solutions
-                    {
-                        var freshParams = new IndicatorCollection(strategyType);
-                        freshParams.RandomizeParameters();
-                        workQueue.Enqueue(new WorkItem
-                        {
-                            Parameters = freshParams,
-                            Temperature = 100.0, // High temperature for exploration
-                            PreviousBestWinRate = 0,
-                            IterationsSinceImprovement = 0,
-                            TotalIterations = 0,
-                            AdaptiveCoolingRate = defaultCoolingRate,
-                        });
+                    // Calculate how many items to inject based on exploration rate
+                    int itemsToInject = (int)Math.Ceiling(3 * explorationRate); // Reduce from 5 to 3
 
-                        // Also add a perturbed version of the global best if available
-                        var bestGlobal = globalBest.Value;
-                        if (bestGlobal.Params != null)
+                    if (itemsToInject > 0 && iterationsSinceGlobalImprovement < 800) // Add stricter time limit
+                    {
+                        int actualInjected = 0;
+
+                        // Add diversity by creating fresh random parameters
+                        for (int i = 0; i < itemsToInject; i++)
                         {
-                            var diverseParams = bestGlobal.Params.DeepClone();
-                            ParameterPerturbator.PerturbParameters(diverseParams, 0.5, random); // Higher perturbation for diversity
-                            workQueue.Enqueue(new WorkItem
+                            // Only inject if we're still under our limit
+                            if (TryIncrementHighTempInjection())
                             {
-                                Parameters = diverseParams,
-                                Temperature = 50.0, // Medium temperature
-                                PreviousBestWinRate = 0,
-                                IterationsSinceImprovement = 0,
-                                TotalIterations = 0,
-                                AdaptiveCoolingRate = defaultCoolingRate,
-                            });
+                                actualInjected++;
+
+                                var freshParams = new IndicatorCollection(strategyType);
+                                freshParams.RandomizeParameters();
+
+                                // Use significantly lower temperature for late-stage injections
+                                double safeTemp = GetSafeTemperature(30.0); // Much lower temperature
+                                workQueue.Enqueue(new WorkItem
+                                {
+                                    Parameters = freshParams,
+                                    Temperature = safeTemp,
+                                    PreviousBestWinRate = 0,
+                                    IterationsSinceImprovement = 0,
+                                    TotalIterations = 0,
+                                    AdaptiveCoolingRate = defaultCoolingRate,
+                                });
+
+                                // Also add a perturbed version of the global best if available
+                                var bestGlobal = globalBest.Value;
+                                if (bestGlobal.Params != null)
+                                {
+                                    var diverseParams = bestGlobal.Params.DeepClone();
+                                    ParameterPerturbator.PerturbParameters(diverseParams, 0.3, random);
+                                    workQueue.Enqueue(new WorkItem
+                                    {
+                                        Parameters = diverseParams,
+                                        // Very low temperature for exploitation
+                                        Temperature = GetSafeTemperature(20.0),
+                                        PreviousBestWinRate = 0,
+                                        IterationsSinceImprovement = 0,
+                                        TotalIterations = 0,
+                                        AdaptiveCoolingRate = defaultCoolingRate,
+                                    });
+                                }
+                            }
+                        }
+
+                        if (actualInjected > 0)
+                        {
+                            Console.WriteLine($"Worker {workerId}: Queue was empty, injected {actualInjected * 2} new items (exploration rate: {explorationRate:F2})");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Worker {workerId}: Queue was empty, no items injected (injection limit reached)");
                         }
                     }
-
-                    Console.WriteLine($"Worker {workerId}: Queue was empty, injected 10 new exploration items");
+                    else
+                    {
+                        Console.WriteLine($"Worker {workerId}: Queue was empty, no items injected (exploration phase ending)");
+                    }
                 }
             }
             catch (Exception ex)
@@ -1254,6 +1351,218 @@ namespace EzBot.Core.Optimization
                 return fallback;
             }
         }
+
+        // Add these helper methods for improvement tracking and termination
+        private bool IsConverged()
+        {
+            lock (globalImprovement_lock)
+            {
+                convergenceCounter++;
+
+                if (convergenceCounter % CONVERGENCE_CHECK_INTERVAL == 0 && recentFitnessValues.Count >= 10)
+                {
+                    double oldFitness = recentFitnessValues.Dequeue();
+                    recentFitnessValues.Enqueue(globalBestFitness);
+
+                    // If improvement is less than 0.1% over the last 10 checks, consider converged
+                    return (globalBestFitness - oldFitness) / Math.Abs(oldFitness) < 0.001 &&
+                           averageTemperature < 30.0;
+                }
+
+                // Maintain our window of recent fitness values
+                if (recentFitnessValues.Count < 10)
+                    recentFitnessValues.Enqueue(globalBestFitness);
+
+                return false;
+            }
+        }
+
+        private void UpdateExplorationRate()
+        {
+            // Decrease exploration slower if we're still finding improvements
+            double decayRate = iterationsSinceGlobalImprovement > 500 ? 0.995 : 0.999;
+            explorationRate = Math.Max(MIN_EXPLORATION_RATE, explorationRate * decayRate);
+        }
+
+        private void UpdateGlobalCooling()
+        {
+            // Accelerate cooling when progress stalls
+            if (iterationsSinceGlobalImprovement > 500)
+                globalCoolingMultiplier = Math.Min(2.0, globalCoolingMultiplier * 1.05);
+        }
+
+        private void UpdateAverageTemperature(double newTemperature)
+        {
+            // First, cap the incoming temperature if it exceeds our absolute max
+            if (newTemperature > ABSOLUTE_MAX_TEMPERATURE)
+            {
+                newTemperature = ABSOLUTE_MAX_TEMPERATURE;
+            }
+
+            // Only update average with lower temperatures after we've done some exploration
+            if (iterationsSinceGlobalImprovement > 200 && newTemperature > averageTemperature)
+            {
+                // Use a more aggressive dampening for high temperatures
+                averageTemperature = averageTemperature * 0.99 + newTemperature * 0.01;
+            }
+            else
+            {
+                // Normal temperature tracking for cooling work items
+                averageTemperature = averageTemperature * 0.9 + newTemperature * 0.1;
+            }
+
+            // Track the lowest temperature we've observed
+            if (newTemperature < lowestObservedTemperature)
+            {
+                lowestObservedTemperature = newTemperature;
+            }
+        }
+
+        private void CheckAndTerminate(ConcurrentQueue<WorkItem> workQueue, ManualResetEventSlim completionSignal, ref int activeWorkers)
+        {
+            // Check if we've gone too long without improvement, regardless of temperature
+            if (iterationsSinceGlobalImprovement > MAX_ITERATIONS_WITHOUT_IMPROVEMENT)
+            {
+                Console.WriteLine($"Optimization stopping: No improvement after {iterationsSinceGlobalImprovement} iterations.");
+
+                // Empty the queue
+                while (workQueue.TryDequeue(out _)) { }
+
+                // Force all workers to stop
+                int currentActive = activeWorkers;
+                Interlocked.Exchange(ref activeWorkers, 0);
+
+                // Set completion signal
+                completionSignal.Set();
+                return;
+            }
+
+            // Terminate if temperature is too high after some exploration
+            // Lower the threshold from 120 to 90
+            if (iterationsSinceGlobalImprovement > 500 && averageTemperature > 90.0)
+            {
+                Console.WriteLine("Optimization stopping: Temperature too high without improvement.");
+
+                // Empty the queue
+                while (workQueue.TryDequeue(out _)) { }
+
+                // Force all workers to stop
+                int currentActive = activeWorkers;
+                Interlocked.Exchange(ref activeWorkers, 0);
+
+                // Set completion signal
+                completionSignal.Set();
+                return;
+            }
+
+            // Original convergence check
+            if (IsConverged())
+            {
+                Console.WriteLine("Optimization stopping: Solution has converged.");
+
+                // Empty the queue
+                while (workQueue.TryDequeue(out _)) { }
+
+                // Force all workers to stop
+                int currentActive = activeWorkers;
+                Interlocked.Exchange(ref activeWorkers, 0);
+
+                // Set completion signal
+                completionSignal.Set();
+            }
+        }
+
+        // Add a global method to track high temperature injections properly
+        private bool TryIncrementHighTempInjection()
+        {
+            lock (highTempLock)
+            {
+                if (highTempInjectionCount < MAX_HIGH_TEMP_INJECTIONS)
+                {
+                    highTempInjectionCount++;
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        // Helper method to get a safe temperature
+        private double GetSafeTemperature(double requestedTemperature)
+        {
+            // Apply absolute maximum cap
+            return Math.Min(requestedTemperature, ABSOLUTE_MAX_TEMPERATURE);
+        }
+
+        // Add this method for saving the backtest cache
+        private void SaveCacheIfNeeded()
+        {
+            // Skip if not enough time has passed since last save
+            if ((DateTime.Now - lastCacheSaveTime).TotalSeconds < CACHE_SAVE_INTERVAL_SECONDS)
+                return;
+
+            string cacheFilePath = string.IsNullOrEmpty(outputFile)
+                ? "cache_default.json"
+                : $"cache_{Path.GetFileNameWithoutExtension(outputFile)}.json";
+
+            try
+            {
+                // Convert the cache to a list of serializable entities
+                var cacheEntries = backtestCache
+                    .Select(kv => new BacktestCacheEntry
+                    {
+                        ParameterHash = kv.Key,
+                        Result = kv.Value
+                    })
+                    .ToList();
+
+                var jsonOptions = new JsonSerializerOptions { WriteIndented = false }; // No indentation to save space
+                string json = JsonSerializer.Serialize(cacheEntries, jsonOptions);
+                File.WriteAllText(cacheFilePath, json);
+
+                Console.WriteLine($"Saved {cacheEntries.Count:N0} backtest results to cache file.");
+                lastCacheSaveTime = DateTime.Now;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving backtest cache: {ex.Message}");
+            }
+        }
+
+        // Add this method for loading the backtest cache
+        private void LoadCacheIfExists()
+        {
+            string cacheFilePath = string.IsNullOrEmpty(outputFile)
+                ? "cache_default.json"
+                : $"cache_{Path.GetFileNameWithoutExtension(outputFile)}.json";
+
+            if (!File.Exists(cacheFilePath))
+                return;
+
+            Console.WriteLine($"Loading backtest cache from {cacheFilePath}...");
+
+            try
+            {
+                string json = File.ReadAllText(cacheFilePath);
+                var jsonOptions = new JsonSerializerOptions();
+                var cacheEntries = JsonSerializer.Deserialize<List<BacktestCacheEntry>>(json, jsonOptions);
+
+                if (cacheEntries == null || cacheEntries.Count == 0)
+                    return;
+
+                int entriesAdded = 0;
+                foreach (var entry in cacheEntries)
+                {
+                    if (backtestCache.TryAdd(entry.ParameterHash, entry.Result))
+                        entriesAdded++;
+                }
+
+                Console.WriteLine($"Loaded {entriesAdded:N0} backtest results from cache file.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading backtest cache: {ex.Message}");
+            }
+        }
     }
 
     // Helper class for atomic thread-safe references
@@ -1286,10 +1595,15 @@ namespace EzBot.Core.Optimization
         }
     }
 
-    // Extract parameter perturbation to a separate class for better organization
-    public class ParameterPerturbator()
+    public class BacktestCacheEntry
     {
+        public int ParameterHash { get; set; }
+        public required BacktestResult Result { get; set; }
+    }
 
+    // Extract parameter perturbation to a separate class for better organization
+    public class ParameterPerturbator
+    {
         // Gets a hash code based on discretized parameter values
         public int GetDiscretizedHash(IndicatorCollection parameters)
         {

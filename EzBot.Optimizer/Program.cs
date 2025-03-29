@@ -3,7 +3,6 @@ using EzBot.Core.Optimization;
 using EzBot.Core.Strategy;
 using EzBot.Models;
 using System.Globalization;
-using System.Text.Json;
 
 // Configure command-line options
 string? dataFilePath = "C:\\Users\\Ceezar89\\Desktop\\git\\ezbot\\Data\\btcusd_1-min_data.csv";
@@ -11,15 +10,16 @@ StrategyType strategyType = StrategyType.PrecisionTrend;
 TimeFrame timeFrame = TimeFrame.OneHour;
 double initialBalance = 1000;
 double feePercentage = 0.05;
-int lookback = 1500;
-int minTemperature = 10;
-double defaultCoolingRate = 0.80;
+int lookbackDays = 1500;
+int minTemperature = 5;
+double defaultCoolingRate = 0.95;
 int maxConcurrentTrades = 5;
 double maxDrawdownPercent = 30;
 int leverage = 10;
-int daysInactiveLimit = 30;
+int daysInactiveLimit = 10;
 double minWinRatePercent = 0.55;
-int minTotalTrades = 30;
+int minTotalTrades = 10;
+int threadCount = -1;
 
 string outputFile = "";
 
@@ -30,81 +30,69 @@ if (args.Length > 0)
     {
         switch (args[i].ToLower())
         {
-            case "-f":
             case "--file":
                 if (i + 1 < args.Length) dataFilePath = args[++i];
                 break;
-            case "-m":
+            case "--thread-count":
+                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedThreadCount))
+                    threadCount = parsedThreadCount;
+                break;
             case "--min-temperature":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMinTemperature))
                     minTemperature = (int)parsedMinTemperature;
                 break;
-            case "-c":
             case "--cooling-rate":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedDefaultCoolingRate))
                     defaultCoolingRate = parsedDefaultCoolingRate;
                 break;
-            case "-x":
             case "--max-concurrent-trades":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedMaxConcurrentTrades))
                     maxConcurrentTrades = parsedMaxConcurrentTrades;
                 break;
-            case "-d":
             case "--max-drawdown":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMaxDrawdownPercent))
                     maxDrawdownPercent = parsedMaxDrawdownPercent;
                 break;
-            case "-l":
             case "--leverage":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLeverage))
                     leverage = parsedLeverage;
                 break;
-            case "-i":
             case "--min-total-trades":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedMinTotalTrades))
                     minTotalTrades = parsedMinTotalTrades;
                 break;
-            case "-s":
             case "--strategy":
                 if (i + 1 < args.Length && Enum.TryParse(args[++i], true, out StrategyType parsed))
                     strategyType = parsed;
                 break;
-            case "-y":
             case "--days-inactive-limit":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedDaysInactiveLimit))
                     daysInactiveLimit = parsedDaysInactiveLimit;
                 break;
-            case "-w":
             case "--min-win-rate":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMinWinRatePercent))
                     minWinRatePercent = parsedMinWinRatePercent;
                 break;
-            case "-k":
-            case "--lookback":
-                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookback))
-                    lookback = parsedLookback;
+            case "--lookback-days":
+                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookbackDays))
+                    lookbackDays = parsedLookbackDays;
                 break;
-            case "-t":
             case "--timeframe":
                 if (i + 1 < args.Length)
                     timeFrame = TimeFrameUtility.ParseTimeFrame(args[++i]);
                 break;
-            case "-b":
             case "--balance":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double balance))
                     initialBalance = balance;
                 break;
-            case "-e":
             case "--fee":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double fee))
                     feePercentage = fee;
                 break;
-            case "-o":
             case "--output":
                 if (i + 1 < args.Length) outputFile = args[++i];
                 break;
-            case "-h":
-            case "--help":
+            case "--info":
                 PrintUsage();
                 return;
         }
@@ -114,8 +102,12 @@ if (args.Length > 0)
 // If no output file is specified, generate one based on strategy type, timeframe, and lookback
 if (string.IsNullOrEmpty(outputFile))
 {
-    outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + "_" + lookback.ToString() + "d.json";
+    outputFile = strategyType.ToString() + "_" + timeFrame.ToString() + "_" + lookbackDays.ToString() + "d.json";
 }
+
+// threads can be -1 (use all -1 threads), 0 (use all available threads), or a positive integer
+threadCount = threadCount == -1 ? Environment.ProcessorCount - 1 : threadCount == 0 ? Environment.ProcessorCount : threadCount;
+if (threadCount > Environment.ProcessorCount) threadCount = Environment.ProcessorCount;
 
 // If no data file is specified, ask for one or use default
 if (string.IsNullOrEmpty(dataFilePath))
@@ -131,9 +123,6 @@ if (string.IsNullOrEmpty(dataFilePath))
 }
 try
 {
-    // Load historical data
-    Console.WriteLine("");
-    Console.WriteLine($"Loading historical data from {dataFilePath}...");
     var historicalData = CsvDataUtility.LoadBarDataFromCsv(dataFilePath);
 
     // Start the optimization process
@@ -149,7 +138,8 @@ try
         timeFrame,
         initialBalance,
         feePercentage,
-        lookback,
+        lookbackDays,
+        threadCount,
         minTemperature,
         defaultCoolingRate,
         maxConcurrentTrades,
@@ -215,20 +205,23 @@ static void PrintUsage()
     Console.WriteLine("EzBot Strategy Optimizer");
     Console.WriteLine("Usage: EzBot.Optimizer [options]");
     Console.WriteLine("\nOptions:");
-    Console.WriteLine("  -f, --file FILE       CSV file with historical price data");
-    Console.WriteLine("  -s, --strategy TYPE   Strategy type (default: PrecisionTrend)");
-    Console.WriteLine("  -t, --timeframe FRAME Timeframe for backtesting (e.g., 1m, 15m, 1h, 4h, 1d)");
-    Console.WriteLine("  -b, --balance AMOUNT  Initial balance for backtest (default: 1000)");
-    Console.WriteLine("  -e, --fee PERCENTAGE  Trading fee percentage (default: 0.025)");
-    Console.WriteLine("  -o, --output FILE     Output JSON file (default: optimization_result.json)");
-    Console.WriteLine("  -h, --help            Show this help message");
-    Console.WriteLine("  -i, --iterations      Number of iterations to run (default: 1000)");
-    Console.WriteLine("  -m, --min-temperature Minimum temperature for the optimization (default: 10)");
-    Console.WriteLine("  -c, --cooling-rate    Cooling rate for the optimization (default: 0.85)");
-    Console.WriteLine("  -x, --max-concurrent-trades Maximum number of concurrent trades (default: 5)");
-    Console.WriteLine("  -d, --max-drawdown    Maximum drawdown percentage (default: 30)");
-    Console.WriteLine("  -l, --leverage        Leverage (default: 10)");
-    Console.WriteLine("  -y, --days-inactive-limit Days inactive limit (default: 30)");
+    Console.WriteLine("--file                       CSV file with historical price data");
+    Console.WriteLine("--strategy                   Strategy type (default: PrecisionTrend)");
+    Console.WriteLine("--timeframe                  Timeframe for backtesting (e.g., 1m, 15m, 1h, 4h, 1d)");
+    Console.WriteLine("--balance                    Initial balance for backtest (default: 1000)");
+    Console.WriteLine("--fee                        Trading fee percentage (default: 0.05)");
+    Console.WriteLine("--output                     Output JSON file (default: optimization_result.json)");
+    Console.WriteLine("--help                       Show this help message");
+    Console.WriteLine("--lookback-days              Number of days to look back (default: 1500)");
+    Console.WriteLine("--thread-count               Number of threads to use (default: 1)");
+    Console.WriteLine("--min-temperature            Minimum temperature for the optimization (default: 5)");
+    Console.WriteLine("--cooling-rate               Cooling rate for the optimization (default: 0.95)");
+    Console.WriteLine("--max-concurrent-trades      Maximum number of concurrent trades (default: 5)");
+    Console.WriteLine("--max-drawdown               Maximum drawdown percentage (default: 30)");
+    Console.WriteLine("--leverage                   Leverage (default: 10)");
+    Console.WriteLine("--days-inactive-limit        Days inactive limit (default: 10)");
+    Console.WriteLine("--min-win-rate               Minimum win rate percentage (default: 0.55)");
+    Console.WriteLine("--min-total-trades           Minimum total trades (default: 10)");
     Console.WriteLine("\nExample:");
-    Console.WriteLine("  EzBot.Optimizer -f data/BTCUSDT_1m.csv -t 15m -m 100 -b 10000");
+    Console.WriteLine("  EzBot.Optimizer --file data/BTCUSDT_1m.csv --timeframe 15m --min-temperature 100 --cooling-rate 0.85 --max-concurrent-trades 5 --max-drawdown 30 --leverage 10 --days-inactive-limit 30");
 }
