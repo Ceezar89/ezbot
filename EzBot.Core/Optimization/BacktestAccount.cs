@@ -132,7 +132,6 @@ namespace EzBot.Core.Optimization
                 MaxDrawdown = maxDrawdownPercentage, // Set the raw value
                 MaxDrawdownPercent = maxDrawdownPercentage, // Also set the percentage value
                 SharpeRatio = CalculateSharpeRatio(),
-                Trades = _completedTrades,
                 BacktestDurationDays = CalculateDuration(),
                 StartDate = DateTimeOffset.FromUnixTimeSeconds((long)StartUnixTime).DateTime,
                 EndDate = DateTimeOffset.FromUnixTimeSeconds((long)EndUnixTime).DateTime,

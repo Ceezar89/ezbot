@@ -6,6 +6,7 @@ using EzBot.Models;
 using EzBot.Common;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace EzBot.Core.Optimization
 {
@@ -16,13 +17,15 @@ namespace EzBot.Core.Optimization
         double initialBalance = 1000,
         double feePercentage = 0.05,
         int lookbackBars = 1_000_000,
+        double minTemperature = 10.0,
+        double defaultCoolingRate = 0.85,
         int maxConcurrentTrades = 5,
         double maxDrawdownPercent = 30,
         int leverage = 10,
         int daysInactiveLimit = 30,
         double minWinRatePercent = 0.55,
         int minTotalTrades = 30,
-        int maxResultsToKeep = 1000
+        string outputFile = ""
         )
     {
         private readonly List<BarData> fullHistoricalData = fullHistoricalData;
@@ -35,7 +38,10 @@ namespace EzBot.Core.Optimization
         private readonly int leverage = leverage;
         private readonly int daysInactiveLimit = daysInactiveLimit;
         private readonly double minWinRatePercent = minWinRatePercent;
-        private readonly int maxResultsToKeep = maxResultsToKeep;
+        private readonly int minTotalTrades = minTotalTrades;
+        private readonly double minTemperature = minTemperature;
+        private readonly double defaultCoolingRate = defaultCoolingRate;
+        private readonly string outputFile = outputFile;
         private readonly ConcurrentBag<(IndicatorCollection Params, BacktestResult Result)> candidates = [];
 
         // Changed to a concurrent queue for better performance with trimming
@@ -44,16 +50,17 @@ namespace EzBot.Core.Optimization
         // Track both tested hashes and a cache of backtests for similar parameter sets
         private readonly ConcurrentDictionary<int, byte> testedParameterHashes = new();
         private readonly ConcurrentDictionary<int, BacktestResult> backtestCache = new();
+        private readonly int maxResultsToKeep = Math.Max(1000, Environment.ProcessorCount * 250);
 
         // Keep track of optimization metrics
-        private readonly Stopwatch totalStopwatch = new();
-        private long totalBacktestsRun = 0;
-        private long cachedBacktestsUsed = 0;
-        private readonly Lock metricsLock = new();
-        private const int DOUBLE_PRECISION = 4;
-        private const double MinTemperature = 25.0; // Increased minimum temperature for faster termination
-        private const double DefaultCoolingRate = 0.75; // Global cooling rate - lower means faster cooling
-        private double averageTemperature = 100.0; // Start at initial temperature
+        private readonly Stopwatch totalStopwatch = new(); // Total stopwatch for optimization duration
+        private long totalBacktestsRun = 0; // Total number of backtests run
+        private long cachedBacktestsUsed = 0; // Total number of cached backtests used
+        private readonly Lock metricsLock = new(); // Lock for thread-safe metrics updates
+        private const int DOUBLE_PRECISION = 4; // Precision for parameter discretization
+        private double averageTemperature = 100.0; // Average temperature for progress reporting
+        private DateTime lastSaveTime = DateTime.MinValue; // Track when we last saved results
+        private const int SAVE_INTERVAL_SECONDS = 120; // Save every 2 minutes
 
         /// <summary>
         /// Find optimal parameters for the strategy using simulated annealing with work stealing.
@@ -134,7 +141,7 @@ namespace EzBot.Core.Optimization
                 PreviousBestWinRate = 0,
                 IterationsSinceImprovement = 0,
                 TotalIterations = 0,
-                AdaptiveCoolingRate = DefaultCoolingRate, // Use the global cooling rate
+                AdaptiveCoolingRate = defaultCoolingRate, // Use the global cooling rate
             });
 
             // Also add the original to the results collection so it won't be lost
@@ -154,7 +161,7 @@ namespace EzBot.Core.Optimization
                     PreviousBestWinRate = 0,
                     IterationsSinceImprovement = 0,
                     TotalIterations = 0,
-                    AdaptiveCoolingRate = DefaultCoolingRate, // Use the global cooling rate
+                    AdaptiveCoolingRate = defaultCoolingRate, // Use the global cooling rate
                 });
             }
 
@@ -234,7 +241,7 @@ namespace EzBot.Core.Optimization
                                     PreviousBestWinRate = 0,
                                     IterationsSinceImprovement = 0,
                                     TotalIterations = 0,
-                                    AdaptiveCoolingRate = DefaultCoolingRate,
+                                    AdaptiveCoolingRate = defaultCoolingRate,
                                 });
                             }
                         }
@@ -274,7 +281,7 @@ namespace EzBot.Core.Optimization
             Console.WriteLine("All workers completed. Processing results...");
             Console.WriteLine($"Total optimization time: {totalStopwatch.Elapsed.TotalMinutes:F1} minutes");
             Console.WriteLine($"Total backtests run: {totalBacktestsRun:N0}, cached backtests used: {cachedBacktestsUsed:N0}");
-            Console.WriteLine($"Cache hit rate: {(cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed)):F1}%");
+            Console.WriteLine($"Cache hit rate: {cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed):F1}%");
 
             // Get the best result from the queue by sorting
             var allResults = results.OrderByDescending(r => r.Fitness).ToList();
@@ -290,11 +297,11 @@ namespace EzBot.Core.Optimization
                 if (allResults.Count > 0)
                 {
                     // If we have some results but none are valid, return the best of what we have
-                    var bestFound = allResults.First();
+                    var (Params, Result, Fitness) = allResults.First();
                     return new OptimizationResult
                     {
-                        BestParameters = bestFound.Params.ToDto(),
-                        BacktestResult = bestFound.Result,
+                        BestParameters = Params.ToDto(),
+                        BacktestResult = Result,
                     };
                 }
 
@@ -334,12 +341,78 @@ namespace EzBot.Core.Optimization
             Console.WriteLine($"Backtests run: {totalBacktestsRun:N0}, cached hits: {cachedBacktestsUsed:N0} ({(cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed)):F1}%)");
 
             // Add temperature information
-            double tempProgress = 100.0 * (1.0 - ((averageTemperature - MinTemperature) / (100.0 - MinTemperature)));
+            double tempProgress = 100.0 * (1.0 - ((averageTemperature - minTemperature) / (100.0 - minTemperature)));
 
-            Console.WriteLine($"Current temperature: {averageTemperature:F2} (min: {MinTemperature:F1}) - {tempProgress:F1}% done");
+            Console.WriteLine($"Current temperature: {averageTemperature:F2} (min: {minTemperature:F1})");
 
             Console.WriteLine("==================================================================");
             Console.WriteLine();
+
+            // Periodically save the current best result
+            SaveProgressIfNeeded(globalBest.Value);
+        }
+
+        private void SaveProgressIfNeeded((IndicatorCollection Params, BacktestResult Result, double Fitness) currentBest)
+        {
+            // Skip if no output file specified or not enough time has passed since last save
+            if (string.IsNullOrEmpty(outputFile) ||
+                (DateTime.Now - lastSaveTime).TotalSeconds < SAVE_INTERVAL_SECONDS)
+                return;
+
+            // Only save if we have valid results
+            if (currentBest.Result.TotalTrades > 0)
+            {
+                bool shouldSave = true;
+
+                // Check if file exists and compare results
+                if (File.Exists(outputFile))
+                {
+                    try
+                    {
+                        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+                        string previousJson = File.ReadAllText(outputFile);
+                        var previousResult = JsonSerializer.Deserialize<OptimizationResult>(previousJson, jsonOptions);
+
+                        if (previousResult != null && previousResult.BacktestResult.NetProfit > currentBest.Result.NetProfit)
+                        {
+                            Console.WriteLine($"Previous result in {outputFile} has better net profit (${previousResult.BacktestResult.NetProfit:F2} vs ${currentBest.Result.NetProfit:F2}).");
+                            Console.WriteLine("Current result not saved.");
+                            shouldSave = false;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Current result has better net profit than previous result. Saving...");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error reading previous result: {ex.Message}");
+                        Console.WriteLine("Will save current result.");
+                    }
+                }
+
+                if (shouldSave)
+                {
+                    try
+                    {
+                        var optimizationResult = new OptimizationResult
+                        {
+                            BestParameters = currentBest.Params.ToDto(),
+                            BacktestResult = currentBest.Result,
+                        };
+
+                        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+                        string json = JsonSerializer.Serialize(optimizationResult, jsonOptions);
+                        File.WriteAllText(outputFile, json);
+                        Console.WriteLine($"Progress saved to {outputFile}");
+                        lastSaveTime = DateTime.Now;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error saving progress: {ex.Message}");
+                    }
+                }
+            }
         }
 
         private void FindSeedCandidate(
@@ -485,12 +558,6 @@ namespace EzBot.Core.Optimization
                     int currentHash = parameterPerturbator.GetDiscretizedHash(currentParams);
                     var currentResult = RunBacktest(currentStrategy, timeframeData, currentHash);
 
-                    if (workerBacktestsRun % 10 == 0 && currentHash == parameterPerturbator.GetDiscretizedHash(currentParams))
-                    {
-                        // Ensure the hash function is consistent
-                        Debug.Assert(currentHash == parameterPerturbator.GetDiscretizedHash(currentParams));
-                    }
-
                     workerBacktestsRun++;
 
                     // Track if this was a new backtest or used the cache
@@ -511,7 +578,7 @@ namespace EzBot.Core.Optimization
                     // Store valid results, keeping only the best up to maxResultsToKeep
                     if (currentResult.TotalTrades > minTotalTrades && currentResult.MaxDrawdownPercent <= maxDrawdownPercent)
                     {
-                        var resultTuple = (currentParams.DeepClone(), currentResult, currentFitness);
+                        var resultTuple = (SafeClone(currentParams), currentResult, currentFitness);
 
                         // Add to results and trim occasionally
                         results.Enqueue(resultTuple);
@@ -538,12 +605,12 @@ namespace EzBot.Core.Optimization
                         // Adjust cooling rate based on success rate
                         // If success rate is high, cool slower to explore more
                         // If success rate is low, cool faster to exploit current good solutions
-                        coolingRate = Math.Max(0.5, Math.Min(0.95, DefaultCoolingRate + (successRate - 0.5) * 0.1));
+                        coolingRate = Math.Max(0.5, Math.Min(0.95, defaultCoolingRate + (successRate - 0.5) * 0.1));
                     }
 
                     // If we've reached the temperature lower bound or exhausted iterations,
                     // don't generate a new work item
-                    bool shouldStop = temperature <= MinTemperature ||
+                    bool shouldStop = temperature <= minTemperature ||
                                      (previousBestWinRate > 0 &&
                                       currentWinRate - previousBestWinRate < MinWinRateImprovement &&
                                       iterationsSinceImprovement >= MaxConsecutiveIterations);
@@ -565,7 +632,7 @@ namespace EzBot.Core.Optimization
                             PreviousBestWinRate = 0,
                             IterationsSinceImprovement = 0,
                             TotalIterations = 0,
-                            AdaptiveCoolingRate = DefaultCoolingRate,
+                            AdaptiveCoolingRate = defaultCoolingRate,
                         });
                     }
 
@@ -587,7 +654,7 @@ namespace EzBot.Core.Optimization
                                     PreviousBestWinRate = 0,
                                     IterationsSinceImprovement = 0,
                                     TotalIterations = 0,
-                                    AdaptiveCoolingRate = DefaultCoolingRate,
+                                    AdaptiveCoolingRate = defaultCoolingRate,
                                 });
                             }
                         }
@@ -655,7 +722,7 @@ namespace EzBot.Core.Optimization
                         acceptedMoves++; // Track for adaptive cooling
 
                         // Store it in results
-                        var resultTuple = (candidateParams.DeepClone(), candidateResult, candidateFitness);
+                        var resultTuple = (SafeClone(candidateParams), candidateResult, candidateFitness);
                         results.Enqueue(resultTuple);
 
                         // Occasionally trim results
@@ -721,7 +788,7 @@ namespace EzBot.Core.Optimization
                                 PreviousBestWinRate = 0,
                                 IterationsSinceImprovement = 0,
                                 TotalIterations = 0,
-                                AdaptiveCoolingRate = DefaultCoolingRate,
+                                AdaptiveCoolingRate = defaultCoolingRate,
                             });
                         }
                     }
@@ -740,7 +807,7 @@ namespace EzBot.Core.Optimization
                                 PreviousBestWinRate = 0,
                                 IterationsSinceImprovement = 0,
                                 TotalIterations = 0,
-                                AdaptiveCoolingRate = DefaultCoolingRate,
+                                AdaptiveCoolingRate = defaultCoolingRate,
                             });
                         }
                     }
@@ -756,7 +823,7 @@ namespace EzBot.Core.Optimization
                             PreviousBestWinRate = 0,
                             IterationsSinceImprovement = 0,
                             TotalIterations = 0,
-                            AdaptiveCoolingRate = DefaultCoolingRate,
+                            AdaptiveCoolingRate = defaultCoolingRate,
                         });
                     }
                 }
@@ -783,7 +850,7 @@ namespace EzBot.Core.Optimization
                             PreviousBestWinRate = 0,
                             IterationsSinceImprovement = 0,
                             TotalIterations = 0,
-                            AdaptiveCoolingRate = DefaultCoolingRate,
+                            AdaptiveCoolingRate = defaultCoolingRate,
                         });
 
                         // Also add a perturbed version of the global best if available
@@ -799,7 +866,7 @@ namespace EzBot.Core.Optimization
                                 PreviousBestWinRate = 0,
                                 IterationsSinceImprovement = 0,
                                 TotalIterations = 0,
-                                AdaptiveCoolingRate = DefaultCoolingRate,
+                                AdaptiveCoolingRate = defaultCoolingRate,
                             });
                         }
                     }
@@ -826,59 +893,93 @@ namespace EzBot.Core.Optimization
         // Trim the results collection to maintain a bounded size
         private void TrimResultsCollection()
         {
-            // Fast approximation: dequeue some items
-            if (results.Count <= maxResultsToKeep) return;
-
-            // Get all items, sort, and keep best N
-            var allResults = results.ToArray();
-
-            // Clear existing results
-            while (results.TryDequeue(out _)) { }
-
-            // Use fitness diversity to keep a more varied set
-            var diverseResults = new List<(IndicatorCollection Params, BacktestResult Result, double Fitness)>();
-
-            // Keep the top 20% best results
-            int topResultsCount = maxResultsToKeep / 5;
-            diverseResults.AddRange(allResults.OrderByDescending(r => r.Fitness).Take(topResultsCount));
-
-            // For the rest, select diverse results based on a combination of fitness and trade count variety
-            var remainingResults = allResults.Except(diverseResults).ToList();
-
-            // First group by trade count ranges
-            var tradeCountGroups = remainingResults
-                .GroupBy(r => Math.Floor(r.Result.TotalTrades / 10.0) * 10) // Group by 10s of trades (0-9, 10-19, etc.)
-                .OrderByDescending(g => g.Key);
-
-            // Take best few from each group to ensure diversity in trade counts
-            foreach (var group in tradeCountGroups)
+            try
             {
-                // Take top items from this trade count group, up to about 10% of max results per group
-                diverseResults.AddRange(group.OrderByDescending(r => r.Fitness).Take(maxResultsToKeep / 10));
+                // Fast approximation: dequeue some items
+                if (results.Count <= maxResultsToKeep) return;
 
-                // Stop if we've collected enough
-                if (diverseResults.Count >= maxResultsToKeep / 2)
-                    break;
+                // Get all items, sort, and keep best N
+                var allResults = results.ToArray();
+
+                // Clear existing results
+                while (results.TryDequeue(out _)) { }
+
+                // Use fitness diversity to keep a more varied set
+                var diverseResults = new List<(IndicatorCollection Params, BacktestResult Result, double Fitness)>();
+
+                // Keep the top 20% best results
+                int topResultsCount = maxResultsToKeep / 5;
+                diverseResults.AddRange(allResults.OrderByDescending(r => r.Fitness).Take(topResultsCount));
+
+                // For the rest, select diverse results based on a combination of fitness and trade count variety
+                var remainingResults = allResults.Except(diverseResults).ToList();
+
+                // First group by trade count ranges
+                var tradeCountGroups = remainingResults
+                    .GroupBy(r => Math.Floor(r.Result.TotalTrades / 10.0) * 10) // Group by 10s of trades (0-9, 10-19, etc.)
+                    .OrderByDescending(g => g.Key);
+
+                // Take best few from each group to ensure diversity in trade counts
+                foreach (var group in tradeCountGroups)
+                {
+                    // Take top items from this trade count group, up to about 10% of max results per group
+                    diverseResults.AddRange(group.OrderByDescending(r => r.Fitness).Take(maxResultsToKeep / 10));
+
+                    // Stop if we've collected enough
+                    if (diverseResults.Count >= maxResultsToKeep / 2)
+                        break;
+                }
+
+                // If we still have space, fill with overall best remaining
+                int remaining = maxResultsToKeep / 2 - diverseResults.Count;
+                if (remaining > 0)
+                {
+                    diverseResults.AddRange(
+                        remainingResults
+                        .Except(diverseResults)
+                        .OrderByDescending(r => r.Fitness)
+                        .Take(remaining));
+                }
+
+                // Re-add diverse results to the queue
+                foreach (var result in diverseResults)
+                {
+                    results.Enqueue(result);
+                }
+
+                Console.WriteLine($"Trimmed results from {allResults.Length} to {results.Count}, preserving diversity");
             }
-
-            // If we still have space, fill with overall best remaining
-            int remaining = maxResultsToKeep / 2 - diverseResults.Count;
-            if (remaining > 0)
+            catch (Exception ex)
             {
-                diverseResults.AddRange(
-                    remainingResults
-                    .Except(diverseResults)
-                    .OrderByDescending(r => r.Fitness)
-                    .Take(remaining));
-            }
+                Console.WriteLine($"Error during results trimming: {ex.Message}");
+                // Fallback to a simpler approach if the sophisticated trimming fails
+                try
+                {
+                    // Use a simple, more robust approach
+                    var allResults = results.ToArray();
 
-            // Re-add diverse results to the queue
-            foreach (var result in diverseResults)
-            {
-                results.Enqueue(result);
-            }
+                    // Clear the queue
+                    while (results.TryDequeue(out _)) { }
 
-            Console.WriteLine($"Trimmed results from {allResults.Length} to {results.Count}, preserving diversity");
+                    // Take top results based on fitness only
+                    var simpleResults = allResults
+                        .OrderByDescending(r => r.Fitness)
+                        .Take(maxResultsToKeep)
+                        .ToList();
+
+                    // Re-add to queue
+                    foreach (var result in simpleResults)
+                        results.Enqueue(result);
+
+                    Console.WriteLine($"Fallback trimming completed: kept top {simpleResults.Count} results by fitness");
+                }
+                catch (Exception innerEx)
+                {
+                    Console.WriteLine($"Critical error in results management: {innerEx.Message}");
+                    // At this point we can't recover the results collection,
+                    // but the algorithm can continue with an empty results set
+                }
+            }
         }
 
         // Work item for the processing queue with improved fields
@@ -1053,6 +1154,111 @@ namespace EzBot.Core.Optimization
 
             return profitScore + winRateScore + efficiencyBonus - drawdownPenalty - inactivityPenalty;
         }
+
+        public void SaveFinalResult(OptimizationResult result)
+        {
+            // Skip if no output file specified
+            if (string.IsNullOrEmpty(outputFile))
+                return;
+
+            // Only save if we have valid results
+            if (result.BacktestResult.TotalTrades > 0)
+            {
+                bool shouldSave = true;
+                var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+
+                // Check if file exists and compare results
+                if (File.Exists(outputFile))
+                {
+                    try
+                    {
+                        string previousJson = File.ReadAllText(outputFile);
+                        var previousResult = JsonSerializer.Deserialize<OptimizationResult>(previousJson, jsonOptions);
+
+                        if (previousResult != null && previousResult.BacktestResult.NetProfit > result.BacktestResult.NetProfit)
+                        {
+                            Console.WriteLine($"\nPrevious result in {outputFile} has better net profit (${previousResult.BacktestResult.NetProfit:F2} vs ${result.BacktestResult.NetProfit:F2}).");
+                            Console.WriteLine("Final result not saved.");
+                            shouldSave = false;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"\nCurrent result has better net profit than previous result.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"\nError reading previous result: {ex.Message}");
+                        Console.WriteLine("Will save current result.");
+                    }
+                }
+
+                if (shouldSave)
+                {
+                    try
+                    {
+                        string json = JsonSerializer.Serialize(result, jsonOptions);
+                        File.WriteAllText(outputFile, json);
+                        Console.WriteLine($"\nFinal results saved to {outputFile}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error saving final result: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        // Helper method to safely clone parameters
+        private IndicatorCollection SafeClone(IndicatorCollection parameters)
+        {
+            try
+            {
+                return parameters.DeepClone();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Clone operation failed: {ex.Message}");
+                // Create new parameters as fallback
+                var fallback = new IndicatorCollection(strategyType);
+                try
+                {
+                    // Try to copy at least some of the most important parameters
+                    foreach (var indicator in parameters)
+                    {
+                        // Use GetType() instead of IndicatorType property for comparison
+                        var matching = fallback.FirstOrDefault(i => i.GetType() == indicator.GetType());
+                        if (matching != null)
+                        {
+                            // Just copy a few core properties without using complex operations
+                            var srcParams = indicator.GetParameters();
+                            var destParams = matching.GetParameters();
+                            foreach (var param in srcParams.GetProperties())
+                            {
+                                try
+                                {
+                                    var destParam = destParams.GetProperties().FirstOrDefault(p => p.Name == param.Name);
+                                    if (destParam != null)
+                                    {
+                                        destParam.Value = param.Value;
+                                        destParams.UpdateFromDescriptor(destParam);
+                                    }
+                                }
+                                catch
+                                {
+                                    // Ignore individual parameter copy failures
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // If even basic copying fails, we'll just use the default parameters
+                }
+                return fallback;
+            }
+        }
     }
 
     // Helper class for atomic thread-safe references
@@ -1093,10 +1299,22 @@ namespace EzBot.Core.Optimization
         // Gets a hash code based on discretized parameter values
         public int GetDiscretizedHash(IndicatorCollection parameters)
         {
-            // Create a discretized clone to calculate the hash
-            var discretized = parameters.DeepClone();
-            DiscretizeParameters(discretized);
-            return discretized.GetHashCode();
+            try
+            {
+                // Create a discretized clone to calculate the hash
+                var discretized = parameters.DeepClone();
+                DiscretizeParameters(discretized);
+                return discretized.GetHashCode();
+            }
+            catch (Exception ex)
+            {
+                // Log the error
+                Console.WriteLine($"Hash calculation error: {ex.Message}");
+
+                // Provide a fallback hash using the original parameters
+                // This might be less precise but won't crash the application
+                return parameters.GetHashCode();
+            }
         }
 
         // Discretizes parameters to reduce the number of unique combinations
@@ -1127,59 +1345,77 @@ namespace EzBot.Core.Optimization
         // Perturb parameters randomly based on the current temperature ratio
         public static void PerturbParameters(IndicatorCollection parameters, double temperatureRatio, Random random)
         {
-            // The higher the temperature, the more aggressive the perturbation
-            foreach (var indicator in parameters)
+            try
             {
-                var indicator_parameters = indicator.GetParameters();
-                foreach (var param in indicator_parameters.GetProperties())
+                // The higher the temperature, the more aggressive the perturbation
+                foreach (var indicator in parameters)
                 {
-                    if (param.Value is double dvalue && param.Min is double dmin && param.Max is double dmax)
+                    var indicator_parameters = indicator.GetParameters();
+                    foreach (var param in indicator_parameters.GetProperties())
                     {
-                        // Calculate perturbation range based on temperature
-                        double range = (dmax - dmin) * temperatureRatio * 0.3;
-
-                        // Calculate new value with random perturbation
-                        double perturbation = (random.NextDouble() * 2 - 1) * range; // -range to +range
-                        double newValue = dvalue + perturbation;
-
-                        // Ensure the new value is within bounds
-                        newValue = Math.Max(dmin, Math.Min(dmax, newValue));
-
-                        // Update the parameter value
-                        param.Value = newValue;
-                        indicator_parameters.UpdateFromDescriptor(param);
-                    }
-                    else if (param.Value is int ivalue && param.Min is int imin && param.Max is int imax)
-                    {
-                        // Calculate perturbation range based on temperature
-                        int range = (int)Math.Ceiling((imax - imin) * temperatureRatio * 0.3);
-                        if (range < 1) range = 1; // Ensure at least some perturbation
-
-                        // Calculate new value with random perturbation
-                        int perturbation = random.Next(-range, range + 1);
-                        int newValue = ivalue + perturbation;
-
-                        // Ensure the new value is within bounds
-                        newValue = Math.Max(imin, Math.Min(imax, newValue));
-
-                        // Update the parameter value
-                        param.Value = newValue;
-                        indicator_parameters.UpdateFromDescriptor(param);
-                    }
-                    else if (param.Value is bool value)
-                    {
-                        // Flip boolean with a probability based on temperature
-                        if (random.NextDouble() < temperatureRatio * 0.3)
+                        try
                         {
-                            param.Value = !value;
-                            indicator_parameters.UpdateFromDescriptor(param);
+                            if (param.Value is double dvalue && param.Min is double dmin && param.Max is double dmax)
+                            {
+                                // Calculate perturbation range based on temperature
+                                double range = (dmax - dmin) * temperatureRatio * 0.3;
+
+                                // Calculate new value with random perturbation
+                                double perturbation = (random.NextDouble() * 2 - 1) * range; // -range to +range
+                                double newValue = dvalue + perturbation;
+
+                                // Ensure the new value is within bounds
+                                newValue = Math.Max(dmin, Math.Min(dmax, newValue));
+
+                                // Update the parameter value
+                                param.Value = newValue;
+                                indicator_parameters.UpdateFromDescriptor(param);
+                            }
+                            else if (param.Value is int ivalue && param.Min is int imin && param.Max is int imax)
+                            {
+                                // Calculate perturbation range based on temperature
+                                int range = (int)Math.Ceiling((imax - imin) * temperatureRatio * 0.3);
+                                if (range < 1) range = 1; // Ensure at least some perturbation
+
+                                // Calculate new value with random perturbation
+                                int perturbation = random.Next(-range, range + 1);
+                                int newValue = ivalue + perturbation;
+
+                                // Ensure the new value is within bounds
+                                newValue = Math.Max(imin, Math.Min(imax, newValue));
+
+                                // Update the parameter value
+                                param.Value = newValue;
+                                indicator_parameters.UpdateFromDescriptor(param);
+                            }
+                            else if (param.Value is bool value)
+                            {
+                                // Flip boolean with a probability based on temperature
+                                if (random.NextDouble() < temperatureRatio * 0.3)
+                                {
+                                    param.Value = !value;
+                                    indicator_parameters.UpdateFromDescriptor(param);
+                                }
+                            }
+                            else
+                            {
+                                // Skip unsupported parameter types instead of throwing an exception
+                                Console.WriteLine($"Skipping unsupported parameter type: {param.Value?.GetType().Name ?? "null"}");
+                            }
+                        }
+                        catch (Exception paramEx)
+                        {
+                            // If a single parameter fails, log it but continue with other parameters
+                            Console.WriteLine($"Error perturbing parameter: {paramEx.Message}");
                         }
                     }
-                    else
-                    {
-                        throw new InvalidOperationException("Unsupported parameter type");
-                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                // If the entire perturbation fails, log it
+                Console.WriteLine($"Error during parameter perturbation: {ex.Message}");
+                // Continue without perturbation
             }
         }
     }

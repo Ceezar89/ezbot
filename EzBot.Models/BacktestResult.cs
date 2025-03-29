@@ -13,7 +13,6 @@ public class BacktestResult
     public double WinRatePercent => TotalTrades > 0 ? (double)WinningTrades / TotalTrades * 100 : 0;
     public double MaxDrawdown { get; set; }
     public double SharpeRatio { get; set; }
-    public List<BacktestTrade> Trades { get; set; } = [];
     public int MaxConcurrentTrades { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
