@@ -120,7 +120,7 @@ namespace EzBot.Core.Optimization
             double totalLoss = Math.Abs(_completedTrades.Where(t => t.Profit <= 0).Sum(t => t.Profit));
 
             // Calculate the max drawdown percentage
-            double maxDrawdownPercentage = CalculateMaxDrawdown();
+            double maxDrawdown = CalculateMaxDrawdown();
 
             return new BacktestResult
             {
@@ -129,13 +129,14 @@ namespace EzBot.Core.Optimization
                 TotalTrades = _completedTrades.Count,
                 WinningTrades = winningTrades,
                 LosingTrades = losingTrades,
-                MaxDrawdown = maxDrawdownPercentage, // Set the raw value
-                MaxDrawdownPercent = maxDrawdownPercentage, // Also set the percentage value
+                MaxDrawdown = maxDrawdown, // Set the raw value
                 SharpeRatio = CalculateSharpeRatio(),
                 BacktestDurationDays = CalculateDuration(),
                 StartDate = DateTimeOffset.FromUnixTimeSeconds((long)StartUnixTime).DateTime,
                 EndDate = DateTimeOffset.FromUnixTimeSeconds((long)EndUnixTime).DateTime,
-                MaxDaysInactive = MaxDaysInactive
+                MaxDaysInactive = MaxDaysInactive,
+                StartUnixTime = (long)StartUnixTime,
+                EndUnixTime = (long)EndUnixTime
             };
         }
 
@@ -149,7 +150,7 @@ namespace EzBot.Core.Optimization
             {
                 runningBalance += trade.Profit;
                 peak = Math.Max(peak, runningBalance);
-                double drawdown = (peak - runningBalance) / peak * 100;
+                double drawdown = (peak - runningBalance) / peak;
                 maxDrawdown = Math.Max(maxDrawdown, drawdown);
             }
 

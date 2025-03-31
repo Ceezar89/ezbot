@@ -2,6 +2,8 @@ namespace EzBot.Models;
 
 public class OptimizationResult
 {
+    public required string StrategyType { get; set; }
+    public required TimeFrame TimeFrame { get; set; }
     public required IndicatorParameterDto[] BestParameters { get; set; }
     public required BacktestResult BacktestResult { get; set; }
 }

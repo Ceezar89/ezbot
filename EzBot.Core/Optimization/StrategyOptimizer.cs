@@ -21,11 +21,12 @@ namespace EzBot.Core.Optimization
         double minTemperature = 0.05,
         double defaultCoolingRate = 0.95,
         int maxConcurrentTrades = 5,
-        double maxDrawdownPercent = 30,
+        double maxDrawdown = 0.3,
         int leverage = 10,
         int daysInactiveLimit = 30,
-        double minWinRatePercent = 0.5,
-        string outputFile = ""
+        double minWinRate = 0.5,
+        string outputFile = "",
+        bool usePreviousResult = false
         )
     {
         private readonly string dataFilePath = dataFilePath;
@@ -34,14 +35,15 @@ namespace EzBot.Core.Optimization
         private readonly double initialBalance = initialBalance;
         private readonly double feePercentage = feePercentage;
         private readonly int maxConcurrentTrades = maxConcurrentTrades;
-        private readonly double maxDrawdownPercent = maxDrawdownPercent;
+        private readonly double maxDrawdown = maxDrawdown;
         private readonly int leverage = leverage;
         private readonly int daysInactiveLimit = daysInactiveLimit;
-        private readonly double minWinRatePercent = minWinRatePercent;
-        private readonly int minTotalTrades = lookbackDays / 5;
+        private readonly double minWinRate = minWinRate;
+        private readonly int minTotalTrades = lookbackDays / 10; // Changed from /5 to /10 (less restrictive)
         private readonly double minTemperature = minTemperature;
         private readonly double defaultCoolingRate = defaultCoolingRate;
         private readonly string outputFile = outputFile;
+        private readonly bool usePreviousResult = usePreviousResult;
         private readonly ConcurrentBag<(IndicatorCollection Params, BacktestResult Result)> candidates = [];
 
         private readonly ConcurrentQueue<(IndicatorCollection Params, BacktestResult Result, double Fitness)> results = [];
@@ -60,17 +62,17 @@ namespace EzBot.Core.Optimization
         private double averageTemperature = 100.0; // Average temperature for progress reporting
         private double lowestObservedTemperature = 100.0; // Track the lowest temperature we've seen
         private int highTempInjectionCount = 0; // Track how many high temp work items we've injected
-        private const int MAX_HIGH_TEMP_INJECTIONS = 10; // Lower the limit
+        private const int MAX_HIGH_TEMP_INJECTIONS = 20; // Increased from 10 to 20
         private DateTime lastSaveTime = DateTime.MinValue; // Track when we last saved results
         private const int SAVE_INTERVAL_SECONDS = 120; // Save every 2 minutes
 
         // For tracking and termination conditions
         private const int MAX_ITERATIONS_WITHOUT_IMPROVEMENT = 10000;  // Terminate if no improvement for this many iterations
         private readonly Lock globalImprovement_lock = new();
-        private double globalBestFitness = double.MinValue;
+        private double globalBestFitness = 0;
         private int iterationsSinceGlobalImprovement = 0;
         private double explorationRate = 1.0; // Controls how often we inject random exploration
-        private const double MIN_EXPLORATION_RATE = 0.05; // Minimum exploration to maintain
+        private const double MIN_EXPLORATION_RATE = 0.25; // Increased from 0.05 to 0.25
         private double globalCoolingMultiplier = 1.0; // Can accelerate cooling when progress stalls
         private readonly Queue<double> recentFitnessValues = new(10); // For convergence detection
         private int convergenceCounter = 0;
@@ -93,7 +95,62 @@ namespace EzBot.Core.Optimization
         /// </summary>
         public OptimizationResult FindOptimalParameters()
         {
-            return ProgressiveOptimization();
+            totalStopwatch.Start();
+
+            // Load any existing backtest cache
+            LoadCacheIfExists();
+
+            // Check if we should use previous results as seeds
+            IndicatorParameterDto[]? previousParams = null;
+            if (usePreviousResult && !string.IsNullOrEmpty(outputFile) && File.Exists(outputFile))
+            {
+                try
+                {
+                    Console.WriteLine($"Loading previous optimization result from {outputFile}...");
+                    string json = File.ReadAllText(outputFile);
+                    var jsonOptions = new JsonSerializerOptions();
+                    var previousResult = JsonSerializer.Deserialize<OptimizationResult>(json, jsonOptions);
+
+                    if (previousResult != null && previousResult.BestParameters != null && previousResult.BestParameters.Length > 0)
+                    {
+                        previousParams = previousResult.BestParameters;
+                        Console.WriteLine($"Successfully loaded previous result with {previousParams.Length} indicators.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to load previous result: {ex.Message}");
+                    // Continue without using previous results
+                }
+            }
+
+            var loadedData = CsvDataUtility.LoadBarDataFromCsv(dataFilePath);
+
+            // Trim the historical data to the lookback period
+            loadedData = [.. loadedData.Skip(loadedData.Count - lookbackDays * 24 * 60)];
+            Console.WriteLine($"Loaded {loadedData.Count:N0} bars of historical data.");
+
+            // Convert the data to the desired timeframe
+            this.historicalData = TimeFrameUtility.ConvertTimeFrame(loadedData, timeFrame);
+
+            // Configure thread count
+            threadCount = threadCount == -1 ? Environment.ProcessorCount - 1 : threadCount == 0 ? Environment.ProcessorCount : threadCount;
+            if (threadCount > Environment.ProcessorCount) threadCount = Environment.ProcessorCount;
+
+            Console.WriteLine("\n=== Parameter Optimization ===");
+            OptimizationResult finalResult = RunOptimizationPhase(historicalData, previousParams);
+            Console.WriteLine($"Phase complete - Best fitness: {CalculateFitness(finalResult.BacktestResult):F2}");
+
+            // Summary of all phases
+            Console.WriteLine("\n=== Optimization Complete ===");
+            Console.WriteLine($"Total backtests run: {totalBacktestsRun:N0}, cached hits: {cachedBacktestsUsed:N0}");
+            Console.WriteLine($"Cache hit rate: {cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed):F1}%");
+            Console.WriteLine($"Total optimization time: {totalStopwatch.Elapsed.TotalMinutes:F1} minutes");
+
+            totalStopwatch.Stop();
+            SaveCacheIfNeeded(); // Save the final cache before exiting
+
+            return finalResult;
         }
 
         private void ReportProgress(AtomicReference<(IndicatorCollection Params, BacktestResult Result, double Fitness)> globalBest)
@@ -105,8 +162,11 @@ namespace EzBot.Core.Optimization
             Console.WriteLine($"==================================================================");
             Console.WriteLine($"Progress Report at {elapsed.TotalMinutes:F1} minutes");
             Console.WriteLine($"Best fitness: {Fitness:F2}, Win rate: {Result.WinRatePercent:F2}%, Net profit: {Result.NetProfit:F2}");
-            Console.WriteLine($"Max drawdown: {Result.MaxDrawdownPercent:F2}%, Total trades: {Result.TotalTrades}");
+            Console.WriteLine($"Max drawdown: {Result.MaxDrawdown * 100:F2}%, Total trades: {Result.TotalTrades}");
             Console.WriteLine($"Avg profit per trade: {(Result.TotalTrades > 0 ? Result.NetProfit / Result.TotalTrades : 0):F2}");
+            // ADDED: Show trading activity percentage and early termination status
+            Console.WriteLine($"Trading activity: {Result.TradingActivityPercentage:F1}%, Max inactive days: {Result.MaxDaysInactive}");
+            Console.WriteLine($"Early terminated: {(Result.TerminatedEarly ? "Yes" : "No")}");
             Console.WriteLine($"Parameters tested: {testedParameterHashes.Count:N0}, Results collected: {results.Count:N0}");
             Console.WriteLine($"Backtests run: {totalBacktestsRun:N0}, cached hits: {cachedBacktestsUsed:N0} ({(cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed)):F1}%)");
 
@@ -170,6 +230,8 @@ namespace EzBot.Core.Optimization
                     {
                         var optimizationResult = new OptimizationResult
                         {
+                            StrategyType = strategyType.ToString(),
+                            TimeFrame = timeFrame,
                             BestParameters = currentBest.Params.ToDto(),
                             BacktestResult = currentBest.Result,
                         };
@@ -194,24 +256,13 @@ namespace EzBot.Core.Optimization
             int searchAttempts = 0;
             var random = new Random(Guid.NewGuid().GetHashCode());
 
-            // Add variables to track cache saving during seed search
-            int lastCacheSaveAttempt = 0;
-            const int SEED_CACHE_SAVE_FREQUENCY = 250; // Changed from 50 to 250 attempts
-
             // Keep searching until we find a good candidate
             while (candidates.IsEmpty)
             {
                 searchAttempts++;
 
-                // Save cache more frequently during seed search
-                if (searchAttempts - lastCacheSaveAttempt >= SEED_CACHE_SAVE_FREQUENCY)
-                {
-                    SaveCacheIfNeeded(true); // Force save during seed search
-                    lastCacheSaveAttempt = searchAttempts;
-                }
-
                 // Create smarter parameter sets as search progresses
-                var candidateParams = parameterPerturbator.GenerateSmartCandidate(strategyType, searchAttempts, random);
+                var candidateParams = ParameterPerturbator.GenerateSmartCandidate(strategyType, searchAttempts, random);
 
                 // Discretize and check if we've already tested this parameter set
                 int discretizedHash = parameterPerturbator.GetDiscretizedHash(candidateParams);
@@ -220,17 +271,28 @@ namespace EzBot.Core.Optimization
                     // Try to use cache instead of skipping completely
                     if (backtestCache.TryGetValue(discretizedHash, out var cachedResult))
                     {
-                        var relaxedCriteria_cached = searchAttempts < 20 &&
+                        // MODIFIED: Include early terminated results but with more relaxed criteria
+                        bool relaxedCriteria_cached = searchAttempts < 20 &&
                                               cachedResult.TotalTrades > minTotalTrades / 2 &&
-                                              cachedResult.MaxDrawdownPercent <= maxDrawdownPercent * 1.5 &&
-                                              cachedResult.WinRate >= minWinRatePercent * 0.8;
+                                              cachedResult.MaxDrawdown <= maxDrawdown * 1.5 &&
+                                              cachedResult.WinRate >= minWinRate * 0.8;
+
+                        // ADDED: Separate criteria for early terminated results
+                        bool earlyTerminatedCriteria = cachedResult.TerminatedEarly &&
+                                                      searchAttempts < 30 && // Give more search attempts for early terminated
+                                                      cachedResult.TotalTrades > minTotalTrades / 3 && // Less trades required
+                                                      cachedResult.MaxDrawdown <= maxDrawdown * 2.0 && // More drawdown allowed
+                                                      cachedResult.WinRate >= minWinRate * 0.7; // Lower win rate acceptable
+
                         // Evaluate the cached result without running a new backtest
                         if ((cachedResult.TotalTrades > minTotalTrades &&
-                            cachedResult.MaxDrawdownPercent <= maxDrawdownPercent &&
-                            cachedResult.WinRate >= minWinRatePercent) || relaxedCriteria_cached)
+                            cachedResult.MaxDrawdown <= maxDrawdown &&
+                            cachedResult.WinRate >= minWinRate &&
+                            !cachedResult.TerminatedEarly) || // Complete runs with full criteria
+                            relaxedCriteria_cached || // Relaxed criteria for normal runs
+                            earlyTerminatedCriteria) // Special criteria for early terminated
                         {
                             candidates.Add((candidateParams, cachedResult));
-                            SaveCacheIfNeeded();
                             return;
                         }
                     }
@@ -244,18 +306,33 @@ namespace EzBot.Core.Optimization
                 var candidateStrategy = StrategyFactory.CreateStrategy(strategyType, candidateParams);
                 var candidateResult = RunBacktest(candidateStrategy, timeframeData, discretizedHash, true); // Allow early termination
 
-                // For very early iterations, use a relaxed criteria to find a promising region
+                // MODIFIED: Include criteria for early terminated strategies
                 bool relaxedCriteria = searchAttempts < 20 &&
                                        candidateResult.TotalTrades > minTotalTrades / 2 &&
-                                       candidateResult.MaxDrawdownPercent <= maxDrawdownPercent * 1.5 &&
-                                       candidateResult.WinRate >= minWinRatePercent * 0.8;
+                                       candidateResult.MaxDrawdown <= maxDrawdown * 1.5 &&
+                                       candidateResult.WinRate >= minWinRate * 0.8;
 
-                // Check if this candidate meets our criteria - with a more lenient drawdown limit
+                // ADDED: Special criteria for early terminated strategies
+                bool earlyTerminatedCriteria_result = candidateResult.TerminatedEarly &&
+                                              searchAttempts < 30 && // Give more search attempts
+                                              candidateResult.TotalTrades > minTotalTrades / 3 && // Less trades required
+                                              candidateResult.MaxDrawdown <= maxDrawdown * 2.0 && // More drawdown allowed
+                                              candidateResult.WinRate >= minWinRate * 0.7; // Lower win rate acceptable
+
+                // Check if this candidate meets our criteria
                 if ((candidateResult.TotalTrades > minTotalTrades &&
-                    candidateResult.MaxDrawdownPercent <= maxDrawdownPercent &&
-                    candidateResult.WinRate >= minWinRatePercent) || relaxedCriteria)
+                    candidateResult.MaxDrawdown <= maxDrawdown &&
+                    candidateResult.WinRate >= minWinRate &&
+                    !candidateResult.TerminatedEarly) || // Complete runs with full criteria
+                    relaxedCriteria ||
+                    earlyTerminatedCriteria_result)
                 {
-                    Console.WriteLine($"Found a good seed candidate with fitness: {CalculateFitness(candidateResult):F2}, win rate: {candidateResult.WinRatePercent:F2}%, drawdown: {candidateResult.MaxDrawdownPercent:F2}%");
+                    // ADDED: Log differentiating between types of candidates
+                    string candidateType = candidateResult.TerminatedEarly ? "early terminated" :
+                                           relaxedCriteria ? "relaxed criteria" : "full criteria";
+
+                    Console.WriteLine($"Found a good seed candidate ({candidateType}) with fitness: {CalculateFitness(candidateResult):F2}, win rate: {candidateResult.WinRatePercent:F2}%, drawdown: {candidateResult.MaxDrawdown * 100:F2}%");
+
                     // Take a snapshot of the current candidates
                     var snapshot = candidates.ToArray();
 
@@ -263,7 +340,6 @@ namespace EzBot.Core.Optimization
                     if (snapshot.Length == 0)
                     {
                         candidates.Add((candidateParams, candidateResult));
-                        SaveCacheIfNeeded();
                         return;
                     }
                     else
@@ -277,7 +353,6 @@ namespace EzBot.Core.Optimization
                         {
                             candidates.Add((candidateParams, candidateResult));
                         }
-                        SaveCacheIfNeeded();
                         return;
                     }
                 }
@@ -436,7 +511,32 @@ namespace EzBot.Core.Optimization
                     }
 
                     // Store valid results, keeping only the best up to maxResultsToKeep
-                    if (currentResult.TotalTrades > minTotalTrades && currentResult.MaxDrawdownPercent <= maxDrawdownPercent)
+                    // MODIFIED: Use more relaxed criteria similar to FindSeedCandidate 
+                    bool shouldStore = false;
+
+                    // Check if result meets any of our criteria sets
+                    if (currentResult.TotalTrades > minTotalTrades && currentResult.MaxDrawdown <= maxDrawdown)
+                    {
+                        // Primary criteria - full trades, normal drawdown
+                        shouldStore = true;
+                    }
+                    else if (currentResult.TotalTrades > minTotalTrades / 2 &&
+                              currentResult.MaxDrawdown <= maxDrawdown * 1.5 &&
+                              currentResult.WinRate >= minWinRate * 0.8)
+                    {
+                        // Relaxed criteria - half trades, 1.5x drawdown, 80% winrate
+                        shouldStore = true;
+                    }
+                    else if (currentResult.TerminatedEarly &&
+                              currentResult.TotalTrades > minTotalTrades / 3 &&
+                              currentResult.MaxDrawdown <= maxDrawdown * 2.0 &&
+                              currentResult.WinRate >= minWinRate * 0.7)
+                    {
+                        // Early terminated criteria - 1/3 trades, 2x drawdown, 70% winrate
+                        shouldStore = true;
+                    }
+
+                    if (shouldStore)
                     {
                         var resultTuple = (SafeClone(currentParams), currentResult, currentFitness);
 
@@ -464,6 +564,7 @@ namespace EzBot.Core.Optimization
                                 {
                                     globalBest.Value = resultTuple;
                                     SaveProgressIfNeeded(globalBest.Value);
+                                    Console.WriteLine($"New best result found: Fitness {currentFitness:F2}, Trades: {currentResult.TotalTrades}, WinRate: {currentResult.WinRatePercent:F2}%");
                                 }
                             }
                             else
@@ -480,7 +581,7 @@ namespace EzBot.Core.Optimization
                         // Adjust cooling rate based on success rate
                         // If success rate is high, cool slower to explore more
                         // If success rate is low, cool faster to exploit current good solutions
-                        coolingRate = Math.Max(0.5, Math.Min(0.95, defaultCoolingRate + (successRate - 0.5) * 0.1));
+                        coolingRate = Math.Max(0.75, Math.Min(0.95, defaultCoolingRate + (successRate - 0.5) * 0.1));
                     }
 
                     // If we've reached the temperature lower bound or exhausted iterations,
@@ -577,7 +678,7 @@ namespace EzBot.Core.Optimization
                     }
 
                     // Skip invalid results
-                    if (candidateResult.TotalTrades == 0 || candidateResult.MaxDrawdownPercent > maxDrawdownPercent)
+                    if (candidateResult.TotalTrades == 0 || candidateResult.MaxDrawdown > maxDrawdown)
                     {
                         // Still add this iteration to the work queue with cooled temperature
                         workItem.Temperature = Math.Min(workItem.Temperature * coolingRate * globalCoolingMultiplier, ABSOLUTE_MAX_TEMPERATURE);
@@ -985,6 +1086,7 @@ namespace EzBot.Core.Optimization
             // Calculate how many bars represent one day based on timeframe
             double barsPerDay = 24.0 * 60.0 / (int)timeFrame;
 
+            // MODIFIED: Set the start time from the first bar after warmup
             account.StartUnixTime = historicalData[warmupPeriod].TimeStamp;
 
             // Pre-allocate arrays and avoid allocations in the loop
@@ -1098,8 +1200,11 @@ namespace EzBot.Core.Optimization
                 // Early termination check for obviously poor strategies
                 if (allowEarlyTermination && i > warmupPeriod + MinBarsForTermination)
                 {
-                    // Check for excessive drawdown
-                    if (currentDrawdown > DrawdownTerminationThreshold)
+                    // MODIFIED: Don't terminate strategies that are making frequent trades
+                    bool highTradeFrequency = totalTrades > (i - warmupPeriod) / 20; // Trading every ~20 bars
+
+                    // Check for excessive drawdown - but be more lenient for frequently trading strategies
+                    if (currentDrawdown > DrawdownTerminationThreshold && !highTradeFrequency)
                     {
                         var earlyResult = account.GenerateResult();
                         earlyResult.TerminatedEarly = true;
@@ -1117,8 +1222,8 @@ namespace EzBot.Core.Optimization
                         return earlyResult;
                     }
 
-                    // Check for too many consecutive losses
-                    if (consecutiveLosses >= 5 && totalTrades >= MinTradesBeforeTermination)
+                    // Check for too many consecutive losses - but be more lenient for frequently trading strategies
+                    if (consecutiveLosses >= 5 && totalTrades >= MinTradesBeforeTermination && !highTradeFrequency)
                     {
                         var earlyResult = account.GenerateResult();
                         earlyResult.TerminatedEarly = true;
@@ -1153,30 +1258,54 @@ namespace EzBot.Core.Optimization
         // Calculate fitness score for a backtest result
         private double CalculateFitness(BacktestResult result)
         {
-            // Avoid division by zero
             if (result.TotalTrades == 0)
                 return 0;
 
-            // Trade count factors - strongly penalize strategies with fewer than minTotalTrades trades
-            double tradeCountPenalty = 0;
-            if (result.TotalTrades < minTotalTrades)
+            // ADDED: Apply a significant penalty to strategies that terminated early
+            double earlyTerminationPenalty = 0;
+            if (result.TerminatedEarly)
             {
-                // Exponential penalty that gets more severe as trade count gets lower
-                tradeCountPenalty = 500 * Math.Exp(-0.15 * result.TotalTrades);
+                // Penalty that gets smaller as we find more strategies
+                double penaltyMultiplier = Math.Max(0.3, Math.Min(0.9, 5000.0 / Math.Max(100, testedParameterHashes.Count)));
+                earlyTerminationPenalty = 5000 * penaltyMultiplier;
             }
 
-            // Prioritize net profit with a higher constant multiplier
-            double profitScore = result.NetProfit * 1.5;
+            // Normalize profit by lookback period
+            double dailyProfitRate = result.NetProfit / lookbackDays;
+            double normalizedProfitScore = dailyProfitRate * 1000;
 
-            double winRateScore = result.WinRate * 100;
+            // MODIFIED: Remove cap on trade frequency to favor higher trade counts
+            double tradeFrequencyRatio = result.TotalTrades / (double)lookbackDays;
+            // MODIFIED: Increase bonus multiplier from 1000 to 2000
+            double tradingActivityBonus = tradeFrequencyRatio * 2000;
 
-            double drawdownPenalty = result.MaxDrawdownPercent * 2;
+            // ADDED: Bonus for strategies that use more of the available backtest period
+            double activityPercentageBonus = 0;
+            if (result.TradingActivityPercentage > 0)
+            {
+                // Scale from 0 to 1000 based on percentage of time actively trading
+                activityPercentageBonus = result.TradingActivityPercentage * 10;
+            }
+
+            // ADDED: Progressive bonus for trades exceeding minimum
+            double excessTradesBonus = 0;
+            if (result.TotalTrades > minTotalTrades)
+            {
+                excessTradesBonus = (result.TotalTrades - minTotalTrades) * 10; // 10 points per additional trade
+            }
+
+            // Penalties
+            double tradeCountPenalty = result.TotalTrades < minTotalTrades ?
+                2000 * Math.Exp(-0.10 * result.TotalTrades) : 0;
+            double drawdownPenalty = result.MaxDrawdown * 200;
             double inactivityPenalty = result.MaxDaysInactive * 5;
 
+            // MODIFIED: Reduce efficiency bonus weight to avoid favoring fewer large trades
             double avgProfitPerTrade = result.NetProfit / result.TotalTrades;
-            // double efficiencyBonus = Math.Min(avgProfitPerTrade * 10, result.NetProfit * 0.5);
+            double efficiencyBonus = Math.Min(avgProfitPerTrade * 2, result.NetProfit * 0.15); // Reduced from 5 to 2 and 0.3 to 0.15
 
-            return profitScore + winRateScore - drawdownPenalty - inactivityPenalty - tradeCountPenalty;
+            return normalizedProfitScore + tradingActivityBonus + excessTradesBonus + efficiencyBonus + activityPercentageBonus
+                   - drawdownPenalty - inactivityPenalty - tradeCountPenalty - earlyTerminationPenalty;
         }
 
         public void SaveFinalResult(OptimizationResult result)
@@ -1604,109 +1733,8 @@ namespace EzBot.Core.Optimization
             }
         }
 
-        private static List<BarData> CreateDownsampledData(List<BarData> fullData, double factor)
-        {
-            if (factor <= 1) return fullData;
-
-            // Calculate how many bars to sample
-            int resultSize = Math.Max(500, (int)(fullData.Count / factor));
-
-            if (resultSize >= fullData.Count)
-                return fullData;
-
-            // Use systematic sampling for efficiency and to maintain the time series nature
-            // This preserves big trends while reducing data size
-            var result = new List<BarData>(resultSize);
-            double step = (double)fullData.Count / resultSize;
-
-            for (double i = 0; i < fullData.Count; i += step)
-            {
-                int index = (int)i;
-                result.Add(fullData[index]);
-            }
-
-            // Always include some recent data for more accurate results
-            int recentDataCount = Math.Min(100, fullData.Count / 10);
-            int startIdx = fullData.Count - recentDataCount;
-
-            // Add recent data (maybe with some overlap, which is fine)
-            for (int i = startIdx; i < fullData.Count; i++)
-            {
-                // Only add if not too close to an existing point to avoid duplicates
-                if (!result.Contains(fullData[i]))
-                {
-                    result.Add(fullData[i]);
-                }
-            }
-
-            // Sort by timestamp to ensure chronological order after adding recent data
-            result.Sort((a, b) => a.TimeStamp.CompareTo(b.TimeStamp));
-
-            Console.WriteLine($"Created downsampled dataset with {result.Count} bars (from original {fullData.Count})");
-            return result;
-        }
-
-        public OptimizationResult ProgressiveOptimization()
-        {
-            totalStopwatch.Start();
-
-            // Load any existing backtest cache
-            LoadCacheIfExists();
-
-            var loadedData = CsvDataUtility.LoadBarDataFromCsv(dataFilePath);
-
-            // Start the optimization process
-            Console.WriteLine($"\nRunning progressive optimization for {strategyType} strategy on {TimeFrameUtility.GetTimeFrameDisplayName(timeFrame)} timeframe.");
-            Console.WriteLine($"Initial balance: ${initialBalance}, Fee: {feePercentage}%");
-            Console.WriteLine();
-
-            // Trim the historical data to the lookback period
-            loadedData = [.. loadedData.Skip(loadedData.Count - lookbackDays * 24 * 60)];
-            Console.WriteLine($"Loaded {loadedData.Count:N0} bars of historical data.");
-
-            // Convert the data to the desired timeframe
-            this.historicalData = TimeFrameUtility.ConvertTimeFrame(loadedData, timeFrame);
-
-            // Configure thread count
-            threadCount = threadCount == -1 ? Environment.ProcessorCount - 1 : threadCount == 0 ? Environment.ProcessorCount : threadCount;
-            if (threadCount > Environment.ProcessorCount) threadCount = Environment.ProcessorCount;
-
-            // PHASE 1: Quick exploration with 50% of data
-            Console.WriteLine("\n=== PHASE 1: Initial Parameter Exploration ===");
-            Console.WriteLine("Using 50% of data for quick parameter exploration...");
-            var downsampledData = CreateDownsampledData(historicalData, 2);
-            double phase1Temperature = minTemperature * 3; // Higher temperature for broader exploration
-            OptimizationResult phase1Result = RunOptimizationPhase(downsampledData, phase1Temperature);
-            Console.WriteLine($"Phase 1 complete - Best fitness: {CalculateFitness(phase1Result.BacktestResult):F2}");
-
-            // PHASE 2: Refined exploration with 50% of data
-            Console.WriteLine("\n=== PHASE 2: Refined Parameter Exploration ===");
-            Console.WriteLine("Using 75% of data with Phase 1 best parameters...");
-            var mediumSampleData = CreateDownsampledData(historicalData, 1.5);
-            double phase2Temperature = minTemperature * 2; // Medium temperature for balanced search
-            OptimizationResult phase2Result = RunOptimizationPhase(mediumSampleData, phase2Temperature, phase1Result.BestParameters);
-            Console.WriteLine($"Phase 2 complete - Best fitness: {CalculateFitness(phase2Result.BacktestResult):F2}");
-
-            // PHASE 3: Final optimization with full data
-            Console.WriteLine("\n=== PHASE 3: Final Parameter Optimization ===");
-            Console.WriteLine("Using 100% of data with Phase 2 best parameters...");
-            OptimizationResult finalResult = RunOptimizationPhase(historicalData, minTemperature, phase2Result.BestParameters);
-            Console.WriteLine($"Phase 3 complete - Best fitness: {CalculateFitness(finalResult.BacktestResult):F2}");
-
-            // Summary of all phases
-            Console.WriteLine("\n=== PROGRESSIVE OPTIMIZATION COMPLETE ===");
-            Console.WriteLine($"Total backtests run: {totalBacktestsRun:N0}, cached hits: {cachedBacktestsUsed:N0}");
-            Console.WriteLine($"Cache hit rate: {cachedBacktestsUsed * 100.0 / (totalBacktestsRun + cachedBacktestsUsed):F1}%");
-            Console.WriteLine($"Total optimization time: {totalStopwatch.Elapsed.TotalMinutes:F1} minutes");
-
-            totalStopwatch.Stop();
-            SaveCacheIfNeeded(); // Save the final cache before exiting
-
-            return finalResult;
-        }
-
         // Add this helper method for running a single optimization phase
-        private OptimizationResult RunOptimizationPhase(List<BarData> phaseData, double phaseTemperature, IndicatorParameterDto[]? seedParameters = null)
+        private OptimizationResult RunOptimizationPhase(List<BarData> phaseData, IndicatorParameterDto[]? seedParameters = null)
         {
             // Determine if this is the final phase by comparing with original data size
             bool isFinalPhase = phaseData.Count >= (historicalData?.Count ?? int.MaxValue);
@@ -1724,7 +1752,62 @@ namespace EzBot.Core.Optimization
             {
                 Console.WriteLine("Using seed parameters from previous phase...");
                 var seedCollection = new IndicatorCollection(strategyType);
-                seedCollection.FromDto(seedParameters);
+                try
+                {
+                    // Create safer conversion of parameters from DTO
+                    foreach (var paramDto in seedParameters)
+                    {
+                        var indicator = seedCollection.FirstOrDefault(i => i.GetType().Name == paramDto.IndicatorType);
+                        if (indicator != null)
+                        {
+                            var indicatorParams = indicator.GetParameters();
+                            foreach (var paramPair in paramDto.Parameters)
+                            {
+                                try
+                                {
+                                    var param = indicatorParams.GetProperties().FirstOrDefault(p => p.Name == paramPair.Key);
+                                    if (param != null)
+                                    {
+                                        // Proper type conversion based on the target parameter type
+                                        if (param.Value is int)
+                                        {
+                                            if (int.TryParse(paramPair.Value.ToString(), out int intValue))
+                                            {
+                                                param.Value = intValue;
+                                                indicatorParams.UpdateFromDescriptor(param);
+                                            }
+                                        }
+                                        else if (param.Value is double)
+                                        {
+                                            if (double.TryParse(paramPair.Value.ToString(), out double doubleValue))
+                                            {
+                                                param.Value = doubleValue;
+                                                indicatorParams.UpdateFromDescriptor(param);
+                                            }
+                                        }
+                                        else if (param.Value is bool)
+                                        {
+                                            if (bool.TryParse(paramPair.Value.ToString(), out bool boolValue))
+                                            {
+                                                param.Value = boolValue;
+                                                indicatorParams.UpdateFromDescriptor(param);
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Error setting parameter '{paramPair.Key}': {ex.Message}");
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error converting seed parameters: {ex.Message}");
+                    // Continue with the empty seed collection
+                }
 
                 // Add the seed collection to our candidate list
                 candidateList.Add(seedCollection.DeepClone());
@@ -1748,7 +1831,7 @@ namespace EzBot.Core.Optimization
                 }
 
                 // Use our optimized work distribution
-                DistributeWorkEvenly(candidateList, phaseWorkQueue, threadCount, phaseTemperature);
+                DistributeWorkEvenly(candidateList, phaseWorkQueue, threadCount, minTemperature);
             }
             else
             {
@@ -1777,23 +1860,77 @@ namespace EzBot.Core.Optimization
                     for (int i = 0; i < threadCount * 5; i++)
                     {
                         var random = new Random(Guid.NewGuid().GetHashCode());
-                        var candidateParams = methodPerturbator.GenerateSmartCandidate(strategyType, i, random);
+                        var candidateParams = ParameterPerturbator.GenerateSmartCandidate(strategyType, i, random);
                         candidateList.Add(candidateParams);
                     }
 
                     // Use our optimized work distribution
-                    DistributeWorkEvenly(candidateList, phaseWorkQueue, threadCount, phaseTemperature);
+                    DistributeWorkEvenly(candidateList, phaseWorkQueue, threadCount, minTemperature);
                 }
                 else
                 {
-                    // Use the candidates found
+                    // MODIFIED: Use all candidates we found regardless of early termination
+                    Console.WriteLine($"Found {candidates.Count} seed candidates - using them directly");
+
+                    // Create work items directly from candidates with appropriate temperatures
                     foreach (var candidate in candidates)
                     {
-                        candidateList.Add(candidate.Params.DeepClone());
+                        // If the candidate is early terminated, report this
+                        if (candidate.Result.TerminatedEarly)
+                        {
+                            Console.WriteLine($"Using early terminated seed with {candidate.Result.TotalTrades} trades, win rate: {candidate.Result.WinRatePercent:F2}%");
+                        }
+
+                        // Add the candidate directly to the work queue with a reasonable temperature
+                        // Use higher temperature for early terminated to allow more exploration
+                        double startTemp = candidate.Result.TerminatedEarly ? 60.0 : 40.0;
+
+                        phaseWorkQueue.Enqueue(new WorkItem
+                        {
+                            Parameters = candidate.Params.DeepClone(),
+                            Temperature = startTemp,
+                            PreviousBestWinRate = 0,
+                            IterationsSinceImprovement = 0,
+                            TotalIterations = 0,
+                            AdaptiveCoolingRate = defaultCoolingRate,
+                        });
+
+                        // Also add variations for diversity
+                        var random = new Random();
+                        for (int i = 0; i < 2; i++)
+                        {
+                            var variantParams = candidate.Params.DeepClone();
+                            ParameterPerturbator.PerturbParameters(variantParams, 0.3, random);
+                            phaseWorkQueue.Enqueue(new WorkItem
+                            {
+                                Parameters = variantParams,
+                                Temperature = startTemp * 0.8,
+                                PreviousBestWinRate = 0,
+                                IterationsSinceImprovement = 0,
+                                TotalIterations = 0,
+                                AdaptiveCoolingRate = defaultCoolingRate,
+                            });
+                        }
                     }
 
-                    // Use our optimized work distribution
-                    DistributeWorkEvenly(candidateList, phaseWorkQueue, threadCount, phaseTemperature);
+                    // Add some extra random candidates for diversity
+                    var rand = new Random();
+                    for (int i = 0; i < threadCount; i++)
+                    {
+                        var randomParams = new IndicatorCollection(strategyType);
+                        randomParams.RandomizeParameters();
+                        phaseWorkQueue.Enqueue(new WorkItem
+                        {
+                            Parameters = randomParams,
+                            Temperature = 70.0, // Higher temperature for exploration
+                            PreviousBestWinRate = 0,
+                            IterationsSinceImprovement = 0,
+                            TotalIterations = 0,
+                            AdaptiveCoolingRate = defaultCoolingRate,
+                        });
+                    }
+
+                    Console.WriteLine($"Created {phaseWorkQueue.Count} initial work items from seeds");
                 }
             }
 
@@ -1802,9 +1939,30 @@ namespace EzBot.Core.Optimization
             int activeWorkers = threadCount;
             results.Clear(); // Clear previous results for this phase
 
-            // Best result for this phase
+            // ADDED: Initialize global best with best seed candidate if found 
+            var initialBest = new IndicatorCollection(strategyType);
+            var initialResult = new BacktestResult();
+            double initialFitness = 0;
+
+            // If we have seed candidates, use the best one as our starting point
+            if (candidates.Count > 0)
+            {
+                var bestSeed = candidates.OrderByDescending(c => CalculateFitness(c.Result)).First();
+                initialBest = bestSeed.Params.DeepClone();
+                initialResult = bestSeed.Result;
+                initialFitness = CalculateFitness(bestSeed.Result);
+
+                // Add the seed to the results queue directly so it's already part of our results
+                results.Enqueue((initialBest, initialResult, initialFitness));
+                Console.WriteLine($"Initialized best result with seed fitness: {initialFitness:F2}, trades: {initialResult.TotalTrades}");
+
+                // Also update global best fitness to match
+                globalBestFitness = initialFitness;
+            }
+
+            // Best result for this phase - initialized with our best seed
             var phaseBestResult = new AtomicReference<(IndicatorCollection Params, BacktestResult Result, double Fitness)>(
-                (new IndicatorCollection(strategyType), new BacktestResult(), double.MinValue));
+                (initialBest, initialResult, initialFitness));
 
             // Progress reporter for this phase
             using var progressReporter = new Timer(_ => ReportProgress(phaseBestResult), null, 5000, 5000);
@@ -1832,32 +1990,79 @@ namespace EzBot.Core.Optimization
             completionSignal.Wait();
 
             // Process results
-            var allResults = results.OrderByDescending(r => r.Fitness).ToList();
+            // MODIFIED: Add bonus to fitness based on trade count to prioritize strategies with more trades
+            // AND reduce penalty for early terminated strategies in final selection
+            var allResults = results.OrderByDescending(r =>
+                r.Fitness + Math.Log10(Math.Max(1, r.Result.TotalTrades)) * 100 - (r.Result.TerminatedEarly ? 1500 : 0)
+            ).ToList();
 
             // Use different trade requirements based on phase
             int phaseMinTrades = isFinalPhase ? minTotalTrades : minTotalTrades / 2;
 
-            // Filter results more strictly in final phase (full data)
-            var validResults = allResults.Where(r =>
+            // MODIFIED: Filter results with more relaxed criteria for early terminated strategies
+            // First try to get results that completed the full backtest period
+            var completeResults = allResults.Where(r =>
+                !r.Result.TerminatedEarly &&
                 r.Result.TotalTrades >= phaseMinTrades &&
-                r.Result.MaxDrawdownPercent <= maxDrawdownPercent).ToList();
+                r.Result.MaxDrawdown <= maxDrawdown).ToList();
 
+            // If we have complete results, use those
+            var validResults = completeResults;
+
+            // If we don't have any complete results, try with early terminated ones
             if (validResults.Count == 0)
             {
-                // Try with a more relaxed criteria if we don't have valid results
-                phaseMinTrades = Math.Max(5, phaseMinTrades / 2);
-                Console.WriteLine($"No valid results found. Relaxing minimum trades to {phaseMinTrades}.");
+                Console.WriteLine("No strategies completed the full backtest period. Using early-terminated strategies.");
 
+                // MODIFIED: Use same criteria as in FindSeedCandidate for early terminated
+                validResults = allResults.Where(r =>
+                    r.Result.TerminatedEarly &&
+                    (
+                        // Standard criteria but no early termination check
+                        (r.Result.TotalTrades >= phaseMinTrades &&
+                        r.Result.MaxDrawdown <= maxDrawdown &&
+                        r.Result.WinRate >= minWinRate) ||
+
+                        // Relaxed criteria similar to what we use in FindSeedCandidate
+                        (r.Result.TotalTrades >= phaseMinTrades / 2 &&
+                        r.Result.MaxDrawdown <= maxDrawdown * 1.5 &&
+                        r.Result.WinRate >= minWinRate * 0.8) ||
+
+                        // Early termination criteria
+                        (r.Result.TotalTrades >= phaseMinTrades / 3 &&
+                        r.Result.MaxDrawdown <= maxDrawdown * 2.0 &&
+                        r.Result.WinRate >= minWinRate * 0.7)
+                    )
+                ).ToList();
+            }
+
+            // If we still have no valid results, use the normal criteria
+            if (validResults.Count == 0)
+            {
+                Console.WriteLine("Falling back to standard filtering criteria.");
                 validResults = allResults.Where(r =>
                     r.Result.TotalTrades >= phaseMinTrades &&
-                    r.Result.MaxDrawdownPercent <= maxDrawdownPercent * 1.25).ToList();
+                    r.Result.MaxDrawdown <= maxDrawdown).ToList();
 
+                // Final fallback - use any results that have some trades
                 if (validResults.Count == 0 && allResults.Count > 0)
                 {
-                    // If we still have no valid results, just take the top 5 by fitness and pick the one with most trades
-                    Console.WriteLine("Still no valid results. Selecting best available strategy.");
-                    var topResults = allResults.Take(Math.Min(5, allResults.Count)).ToList();
-                    validResults = [topResults.OrderByDescending(r => r.Result.TotalTrades).First()];
+                    Console.WriteLine("Using final fallback: selecting best available strategies.");
+
+                    // Try to get strategies with at least some trades
+                    var minimumViableResults = allResults.Where(r => r.Result.TotalTrades >= Math.Max(5, phaseMinTrades / 4)).ToList();
+
+                    if (minimumViableResults.Count > 0)
+                    {
+                        // Take the top few by fitness and then select the one with the most trades
+                        var topResults = minimumViableResults.Take(Math.Min(5, minimumViableResults.Count)).ToList();
+                        validResults = [topResults.OrderByDescending(r => r.Result.TotalTrades).First()];
+                    }
+                    else
+                    {
+                        // Absolute last resort - take the result with the most trades
+                        validResults = [allResults.OrderByDescending(r => r.Result.TotalTrades).First()];
+                    }
                 }
             }
 
@@ -1869,6 +2074,8 @@ namespace EzBot.Core.Optimization
                     var (Params, Result, _) = allResults.First();
                     return new OptimizationResult
                     {
+                        StrategyType = strategyType.ToString(),
+                        TimeFrame = timeFrame,
                         BestParameters = Params.ToDto(),
                         BacktestResult = Result
                     };
@@ -1878,6 +2085,8 @@ namespace EzBot.Core.Optimization
                     // No results at all
                     return new OptimizationResult
                     {
+                        StrategyType = strategyType.ToString(),
+                        TimeFrame = timeFrame,
                         BestParameters = new IndicatorCollection(strategyType).ToDto(),
                         BacktestResult = new BacktestResult()
                     };
@@ -1894,6 +2103,8 @@ namespace EzBot.Core.Optimization
 
             return new OptimizationResult
             {
+                StrategyType = strategyType.ToString(),
+                TimeFrame = timeFrame,
                 BestParameters = bestParameters.ToDto(),
                 BacktestResult = finalResult
             };
@@ -1916,7 +2127,7 @@ namespace EzBot.Core.Optimization
             // Increase from threadCount*2 to threadCount*3 for more exploration
             for (int i = 0; i < threadCount * 3; i++)
             {
-                var explorationParams = parameterPerturbator.GenerateSmartCandidate(strategyType, i, random);
+                var explorationParams = ParameterPerturbator.GenerateSmartCandidate(strategyType, i, random);
 
                 explorationItems.Add(new WorkItem
                 {
@@ -1959,7 +2170,7 @@ namespace EzBot.Core.Optimization
             int segmentCount = threadCount * 3;
             for (int i = 0; i < segmentCount; i++)
             {
-                var diverseParams = parameterPerturbator.GenerateSmartCandidate(strategyType, i + 30, random); // Start at iteration 30
+                var diverseParams = ParameterPerturbator.GenerateSmartCandidate(strategyType, i + 30, random); // Start at iteration 30
 
                 diversificationItems.Add(new WorkItem
                 {
@@ -2097,7 +2308,7 @@ namespace EzBot.Core.Optimization
         }
 
         // Discretizes parameters to reduce the number of unique combinations
-        public void DiscretizeParameters(IndicatorCollection parameters)
+        public static void DiscretizeParameters(IndicatorCollection parameters)
         {
             foreach (var indicator in parameters)
             {
@@ -2189,6 +2400,49 @@ namespace EzBot.Core.Optimization
                         }
                     }
                 }
+
+                // ADDED: Additional bias toward parameters that typically generate more trades
+                foreach (var indicator in parameters)
+                {
+                    var indicator_parameters = indicator.GetParameters();
+
+                    // After standard perturbation, apply trade-frequency bias
+                    foreach (var param in indicator_parameters.GetProperties())
+                    {
+                        try
+                        {
+                            // Example: Many strategies trade more with shorter periods
+                            if (param.Name.Contains("Period") && param.Value is int periodValue && param.Min is int minPeriod)
+                            {
+                                // Bias toward shorter periods which typically generate more trades
+                                // Use a probability-based approach to sometimes shift toward shorter periods
+                                if (random.NextDouble() < 0.3) // 30% chance
+                                {
+                                    int newValue = Math.Max(minPeriod, periodValue - random.Next(1, 5));
+                                    param.Value = newValue;
+                                    indicator_parameters.UpdateFromDescriptor(param);
+                                }
+                            }
+
+                            // Similarly for thresholds - more relaxed thresholds often generate more signals
+                            if (param.Name.Contains("Threshold") && param.Value is double thresholdValue)
+                            {
+                                // For threshold parameters, lower values often produce more trade signals
+                                if (random.NextDouble() < 0.3) // 30% chance
+                                {
+                                    double minThreshold = param.Min is double minVal ? minVal : 0.0;
+                                    double newValue = Math.Max(minThreshold, thresholdValue * 0.9); // Reduce by up to 10%
+                                    param.Value = newValue;
+                                    indicator_parameters.UpdateFromDescriptor(param);
+                                }
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            // Ignore errors in trade-frequency biasing
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -2198,8 +2452,7 @@ namespace EzBot.Core.Optimization
             }
         }
 
-        // Add this method after the DiscretizeParameters method in the ParameterPerturbator class
-        public IndicatorCollection GenerateSmartCandidate(StrategyType strategyType, int attempt, Random random)
+        public static IndicatorCollection GenerateSmartCandidate(StrategyType strategyType, int attempt, Random random)
         {
             var candidateParams = new IndicatorCollection(strategyType);
 

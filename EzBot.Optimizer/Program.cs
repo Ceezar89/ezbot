@@ -14,12 +14,12 @@ int lookbackDays = 1500;
 double minTemperature = 0.05;
 double defaultCoolingRate = 0.95;
 int maxConcurrentTrades = 5;
-double maxDrawdownPercent = 30;
+double maxDrawdown = 0.3;
 int leverage = 10;
 int daysInactiveLimit = 30;
-double minWinRatePercent = 0.50;
+double minWinRate = 0.5;
 int threadCount = -1;
-
+bool usePreviousResult = false;
 string outputFile = "";
 
 // Parse command line arguments
@@ -31,6 +31,9 @@ if (args.Length > 0)
         {
             case "--file":
                 if (i + 1 < args.Length) dataFilePath = args[++i];
+                break;
+            case "--use-prev-result":
+                usePreviousResult = true;
                 break;
             case "--thread-count":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedThreadCount))
@@ -49,8 +52,8 @@ if (args.Length > 0)
                     maxConcurrentTrades = parsedMaxConcurrentTrades;
                 break;
             case "--max-drawdown":
-                if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMaxDrawdownPercent))
-                    maxDrawdownPercent = parsedMaxDrawdownPercent;
+                if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMaxDrawdown))
+                    maxDrawdown = parsedMaxDrawdown;
                 break;
             case "--leverage":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLeverage))
@@ -65,8 +68,8 @@ if (args.Length > 0)
                     daysInactiveLimit = parsedDaysInactiveLimit;
                 break;
             case "--min-win-rate":
-                if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMinWinRatePercent))
-                    minWinRatePercent = parsedMinWinRatePercent;
+                if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMinWinRate))
+                    minWinRate = parsedMinWinRate;
                 break;
             case "--lookback-days":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookbackDays))
@@ -126,12 +129,12 @@ try
         minTemperature,
         defaultCoolingRate,
         maxConcurrentTrades,
-        maxDrawdownPercent,
+        maxDrawdown,
         leverage,
         daysInactiveLimit,
-        minWinRatePercent,
-        // minTotalTrades,
-        outputFile
+        minWinRate,
+        outputFile,
+        usePreviousResult
     );
 
     // print all the parameters
@@ -144,10 +147,10 @@ try
     Console.WriteLine($"Min Temperature: {minTemperature}");
     Console.WriteLine($"Cooling Rate: {defaultCoolingRate}");
     Console.WriteLine($"Max Concurrent Trades: {maxConcurrentTrades}");
-    Console.WriteLine($"Max Drawdown: {maxDrawdownPercent}%");
+    Console.WriteLine($"Max Drawdown: {maxDrawdown * 100:F0}%");
     Console.WriteLine($"Leverage: {leverage}x");
     Console.WriteLine($"Days Inactive Limit: {daysInactiveLimit} days");
-    Console.WriteLine($"Min Win Rate: {minWinRatePercent * 100:F0}%");
+    Console.WriteLine($"Min Win Rate: {minWinRate * 100:F0}%");
     Console.WriteLine($"Output File: {outputFile}");
 
     while (true)
@@ -183,7 +186,7 @@ try
             Console.WriteLine($"  Net Profit: ${best.NetProfit:F2} ({best.ReturnPercentage:F2}%)");
             Console.WriteLine($"  Win Rate: {best.WinRatePercent:F2}% ({best.WinningTrades}/{best.TotalTrades})");
             Console.WriteLine($"  Total Trades: {best.TotalTrades}");
-            Console.WriteLine($"  Max Drawdown: {best.MaxDrawdown:F2}%");
+            Console.WriteLine($"  Max Drawdown: {best.MaxDrawdown * 100:F2}%");
             Console.WriteLine($"  Max Days Inactive: {best.MaxDaysInactive} days");
             Console.WriteLine($"  Sharpe Ratio: {best.SharpeRatio:F2}");
             Console.WriteLine($"  Start Date: {best.StartDate}");
@@ -213,7 +216,6 @@ static void PrintUsage()
     Console.WriteLine("--balance                    Initial balance for backtest (default: 1000)");
     Console.WriteLine("--fee                        Trading fee percentage (default: 0.05)");
     Console.WriteLine("--output                     Output JSON file (default: optimization_result.json)");
-    Console.WriteLine("--help                       Show this help message");
     Console.WriteLine("--lookback-days              Number of days to look back (default: 1500)");
     Console.WriteLine("--thread-count               Number of threads to use (default: 1)");
     Console.WriteLine("--min-temperature            Minimum temperature for the optimization (default: 0.1)");
@@ -223,6 +225,5 @@ static void PrintUsage()
     Console.WriteLine("--leverage                   Leverage (default: 10)");
     Console.WriteLine("--days-inactive-limit        Days inactive limit (default: 10)");
     Console.WriteLine("--min-win-rate               Minimum win rate percentage (default: 0.55)");
-    Console.WriteLine("\nExample:");
-    Console.WriteLine("  EzBot.Optimizer --file data/BTCUSDT_1m.csv --timeframe 15m --min-temperature 100 --cooling-rate 0.85 --max-concurrent-trades 5 --max-drawdown 30 --leverage 10 --days-inactive-limit 30");
+    Console.WriteLine("--use-prev-result            Use previous result (default: false)");
 }
