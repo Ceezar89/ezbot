@@ -18,6 +18,7 @@ public class BacktestResult
     public DateTime EndDate { get; set; }
     public int BacktestDurationDays { get; set; }
     public int MaxDaysInactive { get; set; }
+    public bool TerminatedEarly { get; set; } = false;
 }
 
 public class BacktestTrade
