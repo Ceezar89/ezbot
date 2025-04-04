@@ -62,12 +62,12 @@ namespace EzBot.Core.Optimization
         private double averageTemperature = 100.0; // Average temperature for progress reporting
         private double lowestObservedTemperature = 100.0; // Track the lowest temperature we've seen
         private int highTempInjectionCount = 0; // Track how many high temp work items we've injected
-        private const int MAX_HIGH_TEMP_INJECTIONS = 20; // Increased from 10 to 20
+        private const int MAX_HIGH_TEMP_INJECTIONS = 100; // how many high temp work items we've injected
         private DateTime lastSaveTime = DateTime.MinValue; // Track when we last saved results
         private const int SAVE_INTERVAL_SECONDS = 120; // Save every 2 minutes
 
         // For tracking and termination conditions
-        private const int MAX_ITERATIONS_WITHOUT_IMPROVEMENT = 10000;  // Terminate if no improvement for this many iterations
+        private const int MAX_ITERATIONS_WITHOUT_IMPROVEMENT = 1000;  // Terminate if no improvement for this many iterations
         private readonly Lock globalImprovement_lock = new();
         private double globalBestFitness = 0;
         private int iterationsSinceGlobalImprovement = 0;
@@ -265,11 +265,12 @@ namespace EzBot.Core.Optimization
                 var candidateParams = ParameterPerturbator.GenerateSmartCandidate(strategyType, searchAttempts, random);
 
                 // Discretize and check if we've already tested this parameter set
-                int discretizedHash = parameterPerturbator.GetDiscretizedHash(candidateParams);
-                if (testedParameterHashes.ContainsKey(discretizedHash))
+                // int discretizedHash = parameterPerturbator.GetDiscretizedHash(candidateParams);
+                int candidateHash = candidateParams.GetHashCode();
+                if (testedParameterHashes.ContainsKey(candidateHash))
                 {
                     // Try to use cache instead of skipping completely
-                    if (backtestCache.TryGetValue(discretizedHash, out var cachedResult))
+                    if (backtestCache.TryGetValue(candidateHash, out var cachedResult))
                     {
                         // MODIFIED: Include early terminated results but with more relaxed criteria
                         bool relaxedCriteria_cached = searchAttempts < 20 &&
@@ -300,11 +301,11 @@ namespace EzBot.Core.Optimization
                 }
 
                 // Mark this parameter set as tested
-                testedParameterHashes.TryAdd(discretizedHash, 0);
+                testedParameterHashes.TryAdd(candidateHash, 0);
 
                 // Evaluate the candidate
                 var candidateStrategy = StrategyFactory.CreateStrategy(strategyType, candidateParams);
-                var candidateResult = RunBacktest(candidateStrategy, timeframeData, discretizedHash, true); // Allow early termination
+                var candidateResult = RunBacktest(candidateStrategy, timeframeData, candidateHash, true); // Allow early termination
 
                 // MODIFIED: Include criteria for early terminated strategies
                 bool relaxedCriteria = searchAttempts < 20 &&
@@ -490,7 +491,7 @@ namespace EzBot.Core.Optimization
                     var currentStrategy = StrategyFactory.CreateStrategy(strategyType, currentParams);
 
                     // Use a discretized hash for caching
-                    int currentHash = parameterPerturbator.GetDiscretizedHash(currentParams);
+                    int currentHash = currentParams.GetHashCode();
                     var currentResult = RunBacktest(currentStrategy, timeframeData, currentHash);
 
                     workerBacktestsRun++;
@@ -651,8 +652,8 @@ namespace EzBot.Core.Optimization
                     ParameterPerturbator.PerturbParameters(candidateParams, temperatureRatio, random);
 
                     // Check if we've already tested this parameter set
-                    int discretizedHash = parameterPerturbator.GetDiscretizedHash(candidateParams);
-                    if (testedParameterHashes.ContainsKey(discretizedHash))
+                    int candidateHash = candidateParams.GetHashCode();
+                    if (testedParameterHashes.ContainsKey(candidateHash))
                     {
                         // Cool down and requeue if this is a duplicate
                         workItem.Temperature = Math.Min(workItem.Temperature * coolingRate * globalCoolingMultiplier, ABSOLUTE_MAX_TEMPERATURE);
@@ -664,15 +665,15 @@ namespace EzBot.Core.Optimization
                     }
 
                     // Mark this parameter set as tested
-                    testedParameterHashes.TryAdd(discretizedHash, 0);
+                    testedParameterHashes.TryAdd(candidateHash, 0);
 
                     // Create and evaluate the candidate solution
                     var candidateStrategy = StrategyFactory.CreateStrategy(strategyType, candidateParams);
-                    var candidateResult = RunBacktest(candidateStrategy, timeframeData, discretizedHash);
+                    var candidateResult = RunBacktest(candidateStrategy, timeframeData, candidateHash);
                     workerBacktestsRun++;
 
                     // Track if this used the cache
-                    if (backtestCache.ContainsKey(discretizedHash))
+                    if (backtestCache.ContainsKey(candidateHash))
                     {
                         workerCachedHits++;
                     }
@@ -2286,52 +2287,6 @@ namespace EzBot.Core.Optimization
     // Extract parameter perturbation to a separate class for better organization
     public class ParameterPerturbator
     {
-        // Gets a hash code based on discretized parameter values
-        public int GetDiscretizedHash(IndicatorCollection parameters)
-        {
-            try
-            {
-                // Create a discretized clone to calculate the hash
-                var discretized = parameters.DeepClone();
-                DiscretizeParameters(discretized);
-                return discretized.GetHashCode();
-            }
-            catch (Exception ex)
-            {
-                // Log the error
-                Console.WriteLine($"Hash calculation error: {ex.Message}");
-
-                // Provide a fallback hash using the original parameters
-                // This might be less precise but won't crash the application
-                return parameters.GetHashCode();
-            }
-        }
-
-        // Discretizes parameters to reduce the number of unique combinations
-        public static void DiscretizeParameters(IndicatorCollection parameters)
-        {
-            foreach (var indicator in parameters)
-            {
-                var indicator_parameters = indicator.GetParameters();
-                foreach (var param in indicator_parameters.GetProperties())
-                {
-                    if (param.Value is double dvalue)
-                    {
-                        // Round double values to reduce precision
-                        double rounded = Math.Round(dvalue, 1);
-                        param.Value = rounded;
-                        indicator_parameters.UpdateFromDescriptor(param);
-                    }
-                    else if (param.Value is int ivalue)
-                    {
-                        // Integer parameters generally don't need discretization
-                        // But could implement if needed: int discretized = (ivalue / INT_STEP) * INT_STEP;
-                    }
-                    // Boolean values are already discrete
-                }
-            }
-        }
-
         // Perturb parameters randomly based on the current temperature ratio
         public static void PerturbParameters(IndicatorCollection parameters, double temperatureRatio, Random random)
         {

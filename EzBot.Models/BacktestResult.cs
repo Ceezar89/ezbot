@@ -18,6 +18,7 @@ public class BacktestResult
     public int BacktestDurationDays { get; set; }
     public int MaxDaysInactive { get; set; }
     public bool TerminatedEarly { get; set; } = false;
+    public string TerminationReason { get; set; } = string.Empty;
 
     // ADDED: Store Unix timestamps for exact calculations
     public long StartUnixTime { get; set; }

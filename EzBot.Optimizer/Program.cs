@@ -14,11 +14,11 @@ int lookbackDays = 1500;
 double minTemperature = 0.05;
 double defaultCoolingRate = 0.95;
 int maxConcurrentTrades = 5;
-double maxDrawdown = 0.3;
+double maxDrawdown = 0.5;
 int leverage = 10;
-int daysInactiveLimit = 30;
 double minWinRate = 0.5;
 int threadCount = -1;
+int daysInactiveLimit = 30;
 bool usePreviousResult = false;
 string outputFile = "";
 
@@ -34,6 +34,10 @@ if (args.Length > 0)
                 break;
             case "--use-prev-result":
                 usePreviousResult = true;
+                break;
+            case "--days-inactive-limit":
+                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedDaysInactiveLimit))
+                    daysInactiveLimit = parsedDaysInactiveLimit;
                 break;
             case "--thread-count":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedThreadCount))
@@ -63,10 +67,6 @@ if (args.Length > 0)
                 if (i + 1 < args.Length && Enum.TryParse(args[++i], true, out StrategyType parsed))
                     strategyType = parsed;
                 break;
-            case "--days-inactive-limit":
-                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedDaysInactiveLimit))
-                    daysInactiveLimit = parsedDaysInactiveLimit;
-                break;
             case "--min-win-rate":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMinWinRate))
                     minWinRate = parsedMinWinRate;
@@ -90,9 +90,6 @@ if (args.Length > 0)
             case "--output":
                 if (i + 1 < args.Length) outputFile = args[++i];
                 break;
-            case "--info":
-                PrintUsage();
-                return;
         }
     }
 }
@@ -160,11 +157,6 @@ try
         // Show backtest results
         var best = result.BacktestResult;
 
-        // Clear the progress bar line and move to next line
-        Console.WriteLine();
-
-        Console.WriteLine($"\n=== OPTIMIZATION COMPLETE ===");
-
         if (best.TotalTrades == 0)
         {
             Console.WriteLine("No valid trades found. Please try increasing the number of iterations or changing the strategy.");
@@ -186,12 +178,14 @@ try
             Console.WriteLine($"  Net Profit: ${best.NetProfit:F2} ({best.ReturnPercentage:F2}%)");
             Console.WriteLine($"  Win Rate: {best.WinRatePercent:F2}% ({best.WinningTrades}/{best.TotalTrades})");
             Console.WriteLine($"  Total Trades: {best.TotalTrades}");
+            var terminatedEarly = best.TerminatedEarly ? "Yes" : "No";
+            Console.WriteLine($"  Terminated Early: {terminatedEarly}");
             Console.WriteLine($"  Max Drawdown: {best.MaxDrawdown * 100:F2}%");
             Console.WriteLine($"  Max Days Inactive: {best.MaxDaysInactive} days");
             Console.WriteLine($"  Sharpe Ratio: {best.SharpeRatio:F2}");
             Console.WriteLine($"  Start Date: {best.StartDate}");
             Console.WriteLine($"  End Date: {best.EndDate}");
-            Console.WriteLine($"  Backtest Trading Days: {best.BacktestDurationDays} days");
+            Console.WriteLine($"  Backtest Trading Duration: {best.BacktestDurationDays} days");
 
             // Save final results
             Console.WriteLine("\nChecking if final results should be saved...");
@@ -205,25 +199,3 @@ catch (Exception ex)
     Console.WriteLine(ex.StackTrace);
 }
 
-static void PrintUsage()
-{
-    Console.WriteLine("EzBot Strategy Optimizer");
-    Console.WriteLine("Usage: EzBot.Optimizer [options]");
-    Console.WriteLine("\nOptions:");
-    Console.WriteLine("--file                       CSV file with historical price data");
-    Console.WriteLine("--strategy                   Strategy type (default: PrecisionTrend)");
-    Console.WriteLine("--timeframe                  Timeframe for backtesting (e.g., 1m, 15m, 1h, 4h, 1d)");
-    Console.WriteLine("--balance                    Initial balance for backtest (default: 1000)");
-    Console.WriteLine("--fee                        Trading fee percentage (default: 0.05)");
-    Console.WriteLine("--output                     Output JSON file (default: optimization_result.json)");
-    Console.WriteLine("--lookback-days              Number of days to look back (default: 1500)");
-    Console.WriteLine("--thread-count               Number of threads to use (default: 1)");
-    Console.WriteLine("--min-temperature            Minimum temperature for the optimization (default: 0.1)");
-    Console.WriteLine("--cooling-rate               Cooling rate for the optimization (default: 0.95)");
-    Console.WriteLine("--max-concurrent-trades      Maximum number of concurrent trades (default: 5)");
-    Console.WriteLine("--max-drawdown               Maximum drawdown percentage (default: 30)");
-    Console.WriteLine("--leverage                   Leverage (default: 10)");
-    Console.WriteLine("--days-inactive-limit        Days inactive limit (default: 10)");
-    Console.WriteLine("--min-win-rate               Minimum win rate percentage (default: 0.55)");
-    Console.WriteLine("--use-prev-result            Use previous result (default: false)");
-}
