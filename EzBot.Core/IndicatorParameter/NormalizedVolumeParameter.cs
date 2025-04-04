@@ -19,6 +19,15 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private const int LowVolumeRangeStep = 50;
     private const int NormalHighVolumeRangeRangeStep = 50;
 
+    private static readonly int VolumePeriodPermutations = (VolumePeriodRange.Max - VolumePeriodRange.Min) / VolumePeriodRangeStep + 1;
+    private static readonly int HighVolumePermutations = (HighVolumeRange.Max - HighVolumeRange.Min) / HighVolumeRangeStep + 1;
+    private static readonly int LowVolumePermutations = (LowVolumeRange.Max - LowVolumeRange.Min) / LowVolumeRangeStep + 1;
+    private static readonly int NormalHighVolumeRangePermutations = (NormalHighVolumeRangeRange.Max - NormalHighVolumeRangeRange.Min) / NormalHighVolumeRangeRangeStep + 1;
+
+    public static readonly int TotalPermutations = VolumePeriodPermutations * HighVolumePermutations * LowVolumePermutations * NormalHighVolumeRangePermutations;
+
+    public override int GetPermutationCount() => TotalPermutations;
+
     public override List<ParameterDescriptor> GetProperties()
     {
         return [

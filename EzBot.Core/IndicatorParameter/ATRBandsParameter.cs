@@ -16,6 +16,14 @@ public class AtrBandsParameter : IndicatorParameterBase
     private const double MultiplierRangeStep = 1.0;
     private const double RiskRewardRatioRangeStep = 0.1;
 
+    private static readonly int PeriodPermutations = (PeriodRange.Max - PeriodRange.Min) / PeriodRangeStep + 1;
+    private static readonly int MultiplierPermutations = (int)((MultiplierRange.Max - MultiplierRange.Min) / MultiplierRangeStep + 1);
+    private static readonly int RiskRewardRatioPermutations = (int)((RiskRewardRatioRange.Max - RiskRewardRatioRange.Min) / RiskRewardRatioRangeStep + 1);
+
+    public static readonly int TotalPermutations = PeriodPermutations * MultiplierPermutations * RiskRewardRatioPermutations;
+
+    public override int GetPermutationCount() => TotalPermutations;
+
     public override List<ParameterDescriptor> GetProperties()
     {
         return [

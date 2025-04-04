@@ -22,6 +22,16 @@ public class TrendiloParameter : IndicatorParameterBase
     private const int AlmaSigmaRangeStep = 2;
     private const double BandMultiplierRangeStep = 0.1;
 
+    private static readonly int SmoothingPermutations = (SmoothingRange.Max - SmoothingRange.Min) / SmoothingRangeStep + 1;
+    private static readonly int LookbackPermutations = (LookbackRange.Max - LookbackRange.Min) / LookbackRangeStep + 1;
+    private static readonly int AlmaOffsetPermutations = (int)((AlmaOffsetRange.Max - AlmaOffsetRange.Min) / AlmaOffsetRangeStep + 1);
+    private static readonly int AlmaSigmaPermutations = (AlmaSigmaRange.Max - AlmaSigmaRange.Min) / AlmaSigmaRangeStep + 1;
+    private static readonly int BandMultiplierPermutations = (int)((BandMultiplierRange.Max - BandMultiplierRange.Min) / BandMultiplierRangeStep + 1);
+
+    public static readonly int TotalPermutations = SmoothingPermutations * LookbackPermutations * AlmaOffsetPermutations * AlmaSigmaPermutations * BandMultiplierPermutations;
+
+    public override int GetPermutationCount() => TotalPermutations;
+
     public override List<ParameterDescriptor> GetProperties()
     {
         return [

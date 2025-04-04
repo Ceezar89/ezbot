@@ -15,6 +15,13 @@ public class EtmaParameter : IndicatorParameterBase
     private const int LengthRangeStep = 2;
     private const int SignalStrengthRangeStep = 1;
 
+    private static readonly int LengthPermutations = (LengthRange.Max - LengthRange.Min) / LengthRangeStep + 1;
+    private static readonly int SignalStrengthPermutations = (SignalStrengthRange.Max - SignalStrengthRange.Min) / SignalStrengthRangeStep + 1;
+
+    public static readonly int TotalPermutations = LengthPermutations * SignalStrengthPermutations;
+
+    public override int GetPermutationCount() => TotalPermutations;
+
     public override List<ParameterDescriptor> GetProperties()
     {
         return [

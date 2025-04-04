@@ -9,4 +9,5 @@ public interface IIndicatorParameter : IEquatable<IIndicatorParameter>
     void UpdateFromDescriptor(ParameterDescriptor descriptor);
     IIndicatorParameter DeepClone();
     IIndicatorParameter GetRandomNeighbor(Random random);
+    int GetPermutationCount();
 }

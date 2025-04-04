@@ -55,6 +55,21 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
     public int Count => _indicators.Count;
     public IIndicator this[int index] => _indicators[index];
 
+    public int GetTotalParameterPermutations()
+    {
+        if (_indicators.Count == 0)
+            return 0;
+
+        int totalPermutations = 1;
+
+        foreach (var indicator in _indicators)
+        {
+            totalPermutations *= indicator.GetParameters().GetPermutationCount();
+        }
+
+        return totalPermutations;
+    }
+
     public bool CanIncrement()
     {
         foreach (IIndicator indicator in _indicators)

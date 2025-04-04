@@ -41,6 +41,7 @@ public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
     public abstract List<ParameterDescriptor> GetProperties();
     public abstract IIndicatorParameter GetRandomNeighbor(Random random);
     public abstract void UpdateFromDescriptor(ParameterDescriptor descriptor);
+    public abstract int GetPermutationCount();
 
     public override int GetHashCode()
     {
