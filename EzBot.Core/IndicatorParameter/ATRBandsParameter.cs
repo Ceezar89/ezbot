@@ -7,13 +7,13 @@ public class AtrBandsParameter : IndicatorParameterBase
     private double _riskRewardRatio = 1.1;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (6, 28);
-    private static readonly (double Min, double Max) MultiplierRange = (0.5, 5.0);
-    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.1, 2.0);
+    private static readonly (int Min, int Max) PeriodRange = (10, 16);
+    private static readonly (double Min, double Max) MultiplierRange = (2.0, 4.0);
+    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.0, 1.4);
 
     // Steps
     private const int PeriodRangeStep = 2;
-    private const double MultiplierRangeStep = 0.5;
+    private const double MultiplierRangeStep = 1.0;
     private const double RiskRewardRatioRangeStep = 0.1;
 
     public override List<ParameterDescriptor> GetProperties()
