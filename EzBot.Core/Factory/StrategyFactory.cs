@@ -1,6 +1,5 @@
 using EzBot.Core.Indicator;
 using EzBot.Core.Strategy;
-using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Factory;
 
@@ -18,6 +17,7 @@ public static class StrategyFactory
         return strategyType switch
         {
             StrategyType.PrecisionTrend => new PrecisionTrend(indicators),
+            StrategyType.McGinleyTrend => new McGinleyTrend(indicators),
             _ => throw new ArgumentException("Unknown StrategyType")
         };
     }

@@ -6,7 +6,7 @@ using System.Globalization;
 
 // Configure command-line options
 string? dataFilePath = "../data/btcusd_data.csv";
-StrategyType strategyType = StrategyType.PrecisionTrend;
+StrategyType strategyType = StrategyType.McGinleyTrend;
 TimeFrame timeFrame = TimeFrame.OneHour;
 double initialBalance = 1000;
 double feePercentage = 0.05;

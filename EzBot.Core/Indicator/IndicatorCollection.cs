@@ -29,6 +29,12 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
                 _indicators.Add(new AtrBands(new AtrBandsParameter()));
                 _indicators.Add(new Etma(new EtmaParameter()));
                 break;
+            case StrategyType.McGinleyTrend:
+                _indicators.Add(new McGinleyDynamic(new McGinleyDynamicParameter()));
+                _indicators.Add(new Tdfi(new TdfiParameter()));
+                _indicators.Add(new Lwpi(new LwpiParameter()));
+                _indicators.Add(new AtrBands(new AtrBandsParameter()));
+                break;
             default:
                 throw new ArgumentException("Unknown StrategyType");
         }

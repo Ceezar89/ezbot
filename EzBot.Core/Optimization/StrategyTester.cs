@@ -26,6 +26,9 @@ public class StrategyTester
     private readonly Stopwatch totalStopwatch = new();
     private long currentCombinationIndex = 0;
     private int terminatedEarlyCount = 0;
+    // Timestamp for periodic saving
+    private DateTime lastSaveTime = DateTime.Now;
+    private readonly TimeSpan saveInterval = TimeSpan.FromSeconds(120);
 
     // Add dictionary to track termination reasons
     private readonly ConcurrentDictionary<string, int> terminationReasons = new();
@@ -280,20 +283,9 @@ public class StrategyTester
                         // Run backtest with the current parameters
                         var backtestResult = Backtest.Run(strategy, historicalData, backtestOptions);
 
-                        if (backtestResult.TerminatedEarly)
+                        if (backtestResult.TotalTrades == 0)
                         {
-                            Interlocked.Increment(ref terminatedEarlyCount);
-
-                            // Track termination reason
-                            string reason = string.IsNullOrEmpty(backtestResult.TerminationReason)
-                                ? "Unknown"
-                                : backtestResult.TerminationReason;
-
-                            terminationReasons.AddOrUpdate(
-                                reason,
-                                1,
-                                (_, count) => count + 1
-                            );
+                            continue;
                         }
                         else
                         {
@@ -351,6 +343,16 @@ public class StrategyTester
                 lastUpdate = DateTime.Now;
             }
 
+            // Check if it's time to trim results and save
+            var timeSinceLastSave = DateTime.Now - lastSaveTime;
+            if (timeSinceLastSave >= saveInterval && !results.IsEmpty)
+            {
+                TrimResultsToTop100();
+                SaveTopResults(100);
+                lastSaveTime = DateTime.Now;
+                Console.WriteLine($"\nSaved top 100 results at {DateTime.Now.ToShortTimeString()}");
+            }
+
             // Calculate completion percentage
             int percentage = (int)((double)current / totalCombinations * 100);
             int filledWidth = (int)(progressBarWidth * percentage / 100.0);
@@ -363,7 +365,7 @@ public class StrategyTester
 
             // Format status line with string interpolation (more efficient than multiple concatenations)
             string statusLine = $"\r{new string(progressBar)} {percentage}% ( {current:N0} / {totalCombinations:N0} ) " +
-                               $"[{combinationsPerSecond:N0}/s] Found: {resultsCount:N0} Terminated: {terminatedCount:N0} ";
+                               $"[{combinationsPerSecond:N0}/s] Found: {resultsCount:N0}  ";
 
             // Write to console without a newline
             Console.Write(statusLine);
@@ -373,6 +375,63 @@ public class StrategyTester
         }
 
         Console.WriteLine();  // End the progress line
+    }
+
+    /// <summary>
+    /// Trims the results collection to keep only the top 100 items by net profit
+    /// </summary>
+    private void TrimResultsToTop100()
+    {
+        // Skip trimming if we have fewer than 100 results
+        if (results.Count <= 100)
+            return;
+
+        // Extract all results, sort, and keep top 100
+        var resultArray = results.ToArray();
+        var top100 = resultArray.OrderByDescending(r => r.Result.NetProfit).Take(100).ToArray();
+
+        // Clear the bag and add back only the top 100
+        results.Clear();
+        foreach (var result in top100)
+        {
+            results.Add(result);
+        }
+    }
+
+    /// <summary>
+    /// Saves top N results to a JSON file
+    /// </summary>
+    private void SaveTopResults(int count)
+    {
+        try
+        {
+            // Use ToArray for better performance on ConcurrentBag
+            var resultArray = results.ToArray();
+            var topResults = resultArray.OrderByDescending(r => r.Result.NetProfit).Take(count).ToList();
+
+            if (topResults.Count == 0)
+                return;
+
+            // Create a list of test results
+            var testResults = topResults.Select(r => new TestResult(r)).ToList();
+
+            // Create a unique filename based on timestamp
+            string fileName = $"top_{strategyType}_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+
+            // Serialize with indentation for readability
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+
+            string json = JsonSerializer.Serialize(testResults, options);
+            File.WriteAllText(fileName, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\nError saving top results: {ex.Message}");
+        }
     }
 
     /// <summary>
