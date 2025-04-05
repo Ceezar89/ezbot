@@ -7,18 +7,19 @@ public class AtrBandsParameter : IndicatorParameterBase
     private double _riskRewardRatio = 1.1;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (10, 16);
-    private static readonly (double Min, double Max) MultiplierRange = (2.0, 4.0);
+    private static readonly (int Min, int Max) PeriodRange = (12, 16);
+    private static readonly (double Min, double Max) MultiplierRange = (2.0, 3.0);
     private static readonly (double Min, double Max) RiskRewardRatioRange = (1.1, 1.5);
 
     // Steps
     private const int PeriodRangeStep = 2;
-    private const double MultiplierRangeStep = 1.0;
-    private const double RiskRewardRatioRangeStep = 0.1;
+    private const double MultiplierRangeStep = 0.5;
+    private const double RiskRewardRatioRangeStep = 0.2;
 
-    private static readonly int PeriodPermutations = (PeriodRange.Max - PeriodRange.Min) / PeriodRangeStep + 1;
-    private static readonly int MultiplierPermutations = (int)((MultiplierRange.Max - MultiplierRange.Min) / MultiplierRangeStep + 1);
-    private static readonly int RiskRewardRatioPermutations = (int)((RiskRewardRatioRange.Max - RiskRewardRatioRange.Min) / RiskRewardRatioRangeStep + 1);
+    // Correctly calculate the number of steps for each parameter range
+    private static readonly int PeriodPermutations = CalculateSteps(PeriodRange.Min, PeriodRange.Max, PeriodRangeStep);
+    private static readonly int MultiplierPermutations = CalculateSteps(MultiplierRange.Min, MultiplierRange.Max, MultiplierRangeStep);
+    private static readonly int RiskRewardRatioPermutations = CalculateSteps(RiskRewardRatioRange.Min, RiskRewardRatioRange.Max, RiskRewardRatioRangeStep);
 
     public static readonly int TotalPermutations = PeriodPermutations * MultiplierPermutations * RiskRewardRatioPermutations;
 
@@ -85,18 +86,52 @@ public class AtrBandsParameter : IndicatorParameterBase
 
     public override void IncrementSingle()
     {
-        if (IncrementValue(ref _period, PeriodRangeStep, PeriodRange))
+        // Increment parameters one by one, starting from the least significant
+        // When a parameter is successfully incremented, return immediately
+
+        // Start with the least significant parameter
+        if (_riskRewardRatio + RiskRewardRatioRangeStep <= RiskRewardRatioRange.Max + 0.00001) // Add epsilon for float comparison
+        {
+            _riskRewardRatio += RiskRewardRatioRangeStep;
             return;
-        if (IncrementValue(ref _multiplier, MultiplierRangeStep, MultiplierRange))
+        }
+
+        // Reset and try to increment the next parameter
+        _riskRewardRatio = RiskRewardRatioRange.Min;
+        if (_multiplier + MultiplierRangeStep <= MultiplierRange.Max + 0.00001) // Add epsilon for float comparison
+        {
+            _multiplier += MultiplierRangeStep;
             return;
-        IncrementValue(ref _riskRewardRatio, RiskRewardRatioRangeStep, RiskRewardRatioRange);
+        }
+
+        // Reset and try to increment the final parameter
+        _multiplier = MultiplierRange.Min;
+        if (_period + PeriodRangeStep <= PeriodRange.Max)
+        {
+            _period += PeriodRangeStep;
+        }
     }
 
     public override bool CanIncrement()
     {
-        return Period < PeriodRange.Max
-                || Multiplier < MultiplierRange.Max
-                || RiskRewardRatio < RiskRewardRatioRange.Max;
+        // Check if any parameter can still be incremented
+        if (_riskRewardRatio + RiskRewardRatioRangeStep <= RiskRewardRatioRange.Max + 0.00001) // Add epsilon for float comparison
+            return true;
+
+        if (_multiplier + MultiplierRangeStep <= MultiplierRange.Max + 0.00001) // Add epsilon for float comparison
+            return true;
+
+        if (_period + PeriodRangeStep <= PeriodRange.Max)
+            return true;
+
+        return false;
+    }
+
+    public override void Reset()
+    {
+        Period = PeriodRange.Min;
+        Multiplier = MultiplierRange.Min;
+        RiskRewardRatio = RiskRewardRatioRange.Min;
     }
 
     public override AtrBandsParameter DeepClone()

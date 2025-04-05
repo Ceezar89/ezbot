@@ -9,28 +9,32 @@ public class TrendiloParameter : IndicatorParameterBase
     private double _bandMultiplier = 1.0;
 
     // Ranges
-    private static readonly (int Min, int Max) SmoothingRange = (4, 8);
-    private static readonly (int Min, int Max) LookbackRange = (40, 100);
-    private static readonly (double Min, double Max) AlmaOffsetRange = (0.6, 1.0);
-    private static readonly (int Min, int Max) AlmaSigmaRange = (2, 8);
-    private static readonly (double Min, double Max) BandMultiplierRange = (0.8, 1.0);
+    private static readonly (int Min, int Max) SmoothingRange = (1, 2);
+    private static readonly (int Min, int Max) LookbackRange = (40, 60);
+    private static readonly (double Min, double Max) AlmaOffsetRange = (0.9, 1.0);
+    private static readonly (int Min, int Max) AlmaSigmaRange = (10, 11);
+    private static readonly (double Min, double Max) BandMultiplierRange = (2.0, 2.2);
 
     // Steps
-    private const int SmoothingRangeStep = 4;
-    private const int LookbackRangeStep = 20;
-    private const double AlmaOffsetRangeStep = 0.2;
-    private const int AlmaSigmaRangeStep = 2;
-    private const double BandMultiplierRangeStep = 0.1;
+    private const int SmoothingRangeStep = 1;
+    private const int LookbackRangeStep = 10;
+    private const double AlmaOffsetRangeStep = 0.1;
+    private const int AlmaSigmaRangeStep = 1;
+    private const double BandMultiplierRangeStep = 0.2;
 
-    private static readonly int SmoothingPermutations = (SmoothingRange.Max - SmoothingRange.Min) / SmoothingRangeStep + 1;
-    private static readonly int LookbackPermutations = (LookbackRange.Max - LookbackRange.Min) / LookbackRangeStep + 1;
-    private static readonly int AlmaOffsetPermutations = (int)((AlmaOffsetRange.Max - AlmaOffsetRange.Min) / AlmaOffsetRangeStep + 1);
-    private static readonly int AlmaSigmaPermutations = (AlmaSigmaRange.Max - AlmaSigmaRange.Min) / AlmaSigmaRangeStep + 1;
-    private static readonly int BandMultiplierPermutations = (int)((BandMultiplierRange.Max - BandMultiplierRange.Min) / BandMultiplierRangeStep + 1);
+    // Correctly calculate the number of steps for each parameter range
+    private static readonly int SmoothingPermutations = CalculateSteps(SmoothingRange.Min, SmoothingRange.Max, SmoothingRangeStep);
+    private static readonly int LookbackPermutations = CalculateSteps(LookbackRange.Min, LookbackRange.Max, LookbackRangeStep);
+    private static readonly int AlmaOffsetPermutations = CalculateSteps(AlmaOffsetRange.Min, AlmaOffsetRange.Max, AlmaOffsetRangeStep);
+    private static readonly int AlmaSigmaPermutations = CalculateSteps(AlmaSigmaRange.Min, AlmaSigmaRange.Max, AlmaSigmaRangeStep);
+    private static readonly int BandMultiplierPermutations = CalculateSteps(BandMultiplierRange.Min, BandMultiplierRange.Max, BandMultiplierRangeStep);
 
     public static readonly int TotalPermutations = SmoothingPermutations * LookbackPermutations * AlmaOffsetPermutations * AlmaSigmaPermutations * BandMultiplierPermutations;
 
-    public override int GetPermutationCount() => TotalPermutations;
+    public override int GetPermutationCount()
+    {
+        return TotalPermutations;
+    }
 
     public override List<ParameterDescriptor> GetProperties()
     {
@@ -97,6 +101,7 @@ public class TrendiloParameter : IndicatorParameterBase
 
     public TrendiloParameter() : base("trendilo")
     {
+        // Initialize to minimum values in the allowed ranges
         Smoothing = SmoothingRange.Min;
         Lookback = LookbackRange.Min;
         AlmaOffset = AlmaOffsetRange.Min;
@@ -116,24 +121,76 @@ public class TrendiloParameter : IndicatorParameterBase
 
     public override void IncrementSingle()
     {
-        if (IncrementValue(ref _smoothing, SmoothingRangeStep, SmoothingRange))
+        // Increment parameters one by one, starting from the least significant
+        // When a parameter is successfully incremented, return immediately
+
+        // Start with the least significant parameter (Band Multiplier)
+        if (_bandMultiplier + BandMultiplierRangeStep <= BandMultiplierRange.Max + 0.00001) // Add epsilon for float comparison
+        {
+            _bandMultiplier += BandMultiplierRangeStep;
             return;
-        if (IncrementValue(ref _lookback, LookbackRangeStep, LookbackRange))
+        }
+
+        // Reset Band Multiplier and try to increment Alma Sigma
+        _bandMultiplier = BandMultiplierRange.Min;
+        if (_almaSigma + AlmaSigmaRangeStep <= AlmaSigmaRange.Max)
+        {
+            _almaSigma += AlmaSigmaRangeStep;
             return;
-        if (IncrementValue(ref _almaOffset, AlmaOffsetRangeStep, AlmaOffsetRange))
+        }
+
+        // Reset Alma Sigma and try to increment Alma Offset
+        _almaSigma = AlmaSigmaRange.Min;
+        if (_almaOffset + AlmaOffsetRangeStep <= AlmaOffsetRange.Max + 0.00001) // Add epsilon for float comparison
+        {
+            _almaOffset += AlmaOffsetRangeStep;
             return;
-        if (IncrementValue(ref _almaSigma, AlmaSigmaRangeStep, AlmaSigmaRange))
+        }
+
+        // Reset Alma Offset and try to increment Lookback
+        _almaOffset = AlmaOffsetRange.Min;
+        if (_lookback + LookbackRangeStep <= LookbackRange.Max)
+        {
+            _lookback += LookbackRangeStep;
             return;
-        IncrementValue(ref _bandMultiplier, BandMultiplierRangeStep, BandMultiplierRange);
+        }
+
+        // Reset Lookback and try to increment Smoothing
+        _lookback = LookbackRange.Min;
+        if (_smoothing + SmoothingRangeStep <= SmoothingRange.Max)
+        {
+            _smoothing += SmoothingRangeStep;
+        }
     }
 
     public override bool CanIncrement()
     {
-        return Smoothing < SmoothingRange.Max
-            || Lookback < LookbackRange.Max
-            || AlmaOffset < AlmaOffsetRange.Max
-            || AlmaSigma < AlmaSigmaRange.Max
-            || BandMultiplier < BandMultiplierRange.Max;
+        // Check if any parameter can still be incremented
+        if (_bandMultiplier + BandMultiplierRangeStep <= BandMultiplierRange.Max + 0.00001) // Add epsilon for float comparison
+            return true;
+
+        if (_almaSigma + AlmaSigmaRangeStep <= AlmaSigmaRange.Max)
+            return true;
+
+        if (_almaOffset + AlmaOffsetRangeStep <= AlmaOffsetRange.Max + 0.00001) // Add epsilon for float comparison
+            return true;
+
+        if (_lookback + LookbackRangeStep <= LookbackRange.Max)
+            return true;
+
+        if (_smoothing + SmoothingRangeStep <= SmoothingRange.Max)
+            return true;
+
+        return false;
+    }
+
+    public override void Reset()
+    {
+        Smoothing = SmoothingRange.Min;
+        Lookback = LookbackRange.Min;
+        AlmaOffset = AlmaOffsetRange.Min;
+        AlmaSigma = AlmaSigmaRange.Min;
+        BandMultiplier = BandMultiplierRange.Min;
     }
 
     public override TrendiloParameter DeepClone()

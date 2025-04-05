@@ -20,6 +20,7 @@ public abstract class TradingStrategyBase : ITradingStrategy
 
     protected abstract TradeType ExecuteStrategy();
 
+    // This method is kept for backward compatibility
     public TradeOrder GetAction(List<BarData> bars)
     {
         ArgumentNullException.ThrowIfNull(bars);

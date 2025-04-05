@@ -8,15 +8,16 @@ public class EtmaParameter : IndicatorParameterBase
     private SignalStrength _signalStrength = SignalStrength.VeryStrong;
 
     // Ranges
-    private static readonly (int Min, int Max) LengthRange = (12, 16);
+    private static readonly (int Min, int Max) LengthRange = (20, 22);
     private static readonly (int Min, int Max) SignalStrengthRange = (0, 2);
 
     // Steps
-    private const int LengthRangeStep = 2;
+    private const int LengthRangeStep = 1;
     private const int SignalStrengthRangeStep = 1;
 
-    private static readonly int LengthPermutations = (LengthRange.Max - LengthRange.Min) / LengthRangeStep + 1;
-    private static readonly int SignalStrengthPermutations = (SignalStrengthRange.Max - SignalStrengthRange.Min) / SignalStrengthRangeStep + 1;
+    // Correctly calculate the number of steps for each parameter range
+    private static readonly int LengthPermutations = CalculateSteps(LengthRange.Min, LengthRange.Max, LengthRangeStep);
+    private static readonly int SignalStrengthPermutations = CalculateSteps(SignalStrengthRange.Min, SignalStrengthRange.Max, SignalStrengthRangeStep);
 
     public static readonly int TotalPermutations = LengthPermutations * SignalStrengthPermutations;
 
@@ -74,13 +75,23 @@ public class EtmaParameter : IndicatorParameterBase
 
     public override void IncrementSingle()
     {
-        if (IncrementValue(ref _length, LengthRangeStep, LengthRange))
-            return;
+        // Increment parameters one by one, starting from the least significant
+        // When a parameter is successfully incremented, return immediately
 
+        // Start with the least significant parameter (Signal Strength)
         int signalStrengthInt = (int)_signalStrength;
-        if (IncrementValue(ref signalStrengthInt, SignalStrengthRangeStep, SignalStrengthRange))
+        if (signalStrengthInt + SignalStrengthRangeStep <= SignalStrengthRange.Max)
         {
+            signalStrengthInt += SignalStrengthRangeStep;
             _signalStrength = (SignalStrength)signalStrengthInt;
+            return;
+        }
+
+        // Reset Signal Strength and try to increment Length
+        _signalStrength = (SignalStrength)SignalStrengthRange.Min;
+        if (_length + LengthRangeStep <= LengthRange.Max)
+        {
+            _length += LengthRangeStep;
         }
     }
 
@@ -104,7 +115,21 @@ public class EtmaParameter : IndicatorParameterBase
 
     public override bool CanIncrement()
     {
-        return Length < LengthRange.Max || (int)SignalStrength < SignalStrengthRange.Max;
+        // Check if any parameter can still be incremented
+        int signalStrengthInt = (int)_signalStrength;
+        if (signalStrengthInt + SignalStrengthRangeStep <= SignalStrengthRange.Max)
+            return true;
+
+        if (_length + LengthRangeStep <= LengthRange.Max)
+            return true;
+
+        return false;
+    }
+
+    public override void Reset()
+    {
+        Length = LengthRange.Min;
+        SignalStrength = (SignalStrength)SignalStrengthRange.Min;
     }
 
     protected override int GetAdditionalHashCodeComponents()

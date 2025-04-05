@@ -10,6 +10,7 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
 {
     private readonly List<IIndicator> _indicators;
     private int? _hashCode;
+    private long _currentIterationIndex = 0;
 
     public IndicatorCollection()
     {
@@ -70,27 +71,67 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         return totalPermutations;
     }
 
-    public bool CanIncrement()
+    // Current iteration progress
+    public long CurrentIterationIndex => _currentIterationIndex;
+
+    // Returns the current iteration progress as a percentage (0-100)
+    public double IterationProgress => _currentIterationIndex * 100.0 / Math.Max(1, GetTotalParameterPermutations());
+
+    // Reset the iteration to the beginning
+    public void ResetIteration()
     {
+        // Reset all indicators to their initial parameter state
         foreach (IIndicator indicator in _indicators)
         {
-            if (indicator.GetParameters().CanIncrement())
-                return true;
+            indicator.GetParameters().Reset();
         }
+        _currentIterationIndex = 0;
+        InvalidateCache();
+    }
+
+    // Advances to the next parameter combination using a proper odometer pattern
+    // Returns true if successful, false if we've exhausted all combinations
+    public bool Next()
+    {
+        if (_indicators.Count == 0)
+            return false;
+
+        // Start from the rightmost indicator (least significant digit)
+        for (int i = _indicators.Count - 1; i >= 0; i--)
+        {
+            var parameter = _indicators[i].GetParameters();
+
+            // If this indicator can increment, do it and we're done
+            if (parameter.CanIncrement())
+            {
+                parameter.IncrementSingle();
+                InvalidateCache();
+                _currentIterationIndex++;
+                return true;
+            }
+
+            // This indicator is at its max, so reset it and carry over to the next one
+            parameter.Reset();
+        }
+
+        // If we get here, all indicators are at their maximum values
         return false;
     }
 
-    public void IncrementSingle()
+    // Check if there are more combinations to iterate
+    public bool HasNext()
     {
-        foreach (IIndicator indicator in _indicators)
+        if (_indicators.Count == 0)
+            return false;
+
+        // More efficient implementation than using clone
+        for (int i = 0; i < _indicators.Count; i++)
         {
-            if (indicator.GetParameters().CanIncrement())
-            {
-                indicator.GetParameters().IncrementSingle();
-                InvalidateCache();
-                return;
-            }
+            if (_indicators[i].GetParameters().CanIncrement())
+                return true;
         }
+
+        return false;
     }
 
     public void UpdateAll(List<BarData> bars)
@@ -148,105 +189,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         InvalidateCache();
     }
 
-    public HashSet<IndicatorCollection> GenerateAllParameterCombinations()
-    {
-        var indicatorTypes = new Dictionary<string, Type>();
-
-        // First, pre-calculate all possible parameter combinations for each indicator type
-        var parametersByIndicatorType = new Dictionary<string, List<IIndicatorParameter>>();
-
-        // Calculate all parameter combinations for each indicator
-        foreach (var indicator in _indicators)
-        {
-            string typeName = indicator.GetType().Name;
-            if (!parametersByIndicatorType.ContainsKey(typeName))
-            {
-                indicatorTypes[typeName] = indicator.GetType();
-
-                // Generate all possible parameter values for this indicator type
-                var allParams = new List<IIndicatorParameter>();
-                var baseParam = indicator.GetParameters();
-                var clone = baseParam.DeepClone();
-
-                // Add the initial state
-                allParams.Add(clone);
-
-                // Generate all possible parameter values for this indicator
-                while (clone.CanIncrement())
-                {
-                    // Create a new clone to modify
-                    clone = clone.DeepClone();
-                    clone.IncrementSingle();
-                    allParams.Add(clone);
-                }
-
-                parametersByIndicatorType[typeName] = allParams;
-            }
-        }
-
-        // Now use CartesianProduct to generate all combinations without deep cloning each time
-        var indicatorParameterSets = _indicators
-            .Select(ind => parametersByIndicatorType[ind.GetType().Name])
-            .ToList();
-
-        // Generate the cartesian product of all parameter combinations
-        var combinations = CartesianProduct(indicatorParameterSets).ToList();
-
-        // Use a thread-safe collection for parallel processing
-        var concurrentResult = new ConcurrentBag<IndicatorCollection>();
-
-        // Determine if parallelization is worth it (small sets might be faster sequentially)
-        bool useParallel = combinations.Count > 1000;
-
-        if (useParallel)
-        {
-            // Configure parallel options for optimal performance
-            var parallelOptions = new ParallelOptions
-            {
-                // Use available processor count but limit to avoid thread contention
-                MaxDegreeOfParallelism = Environment.ProcessorCount
-            };
-
-            Parallel.ForEach(combinations, parallelOptions, combination =>
-            {
-                var collection = new IndicatorCollection();
-
-                for (int i = 0; i < _indicators.Count; i++)
-                {
-                    var indicatorType = _indicators[i].GetType();
-                    var param = combination[i];
-                    var indicator = (IIndicator)Activator.CreateInstance(indicatorType, param)!;
-                    collection.Add(indicator);
-                }
-
-                concurrentResult.Add(collection);
-            });
-
-            return [.. concurrentResult];
-        }
-        else
-        {
-            // For smaller sets, use the original sequential implementation
-            var result = new HashSet<IndicatorCollection>();
-
-            foreach (var combination in combinations)
-            {
-                var collection = new IndicatorCollection();
-
-                for (int i = 0; i < _indicators.Count; i++)
-                {
-                    var indicatorType = _indicators[i].GetType();
-                    var param = combination[i];
-                    var indicator = (IIndicator)Activator.CreateInstance(indicatorType, param)!;
-                    collection.Add(indicator);
-                }
-
-                result.Add(collection);
-            }
-
-            return result;
-        }
-    }
 
     private static IEnumerable<List<T>> CartesianProduct<T>(List<List<T>> sequences)
     {
@@ -283,11 +225,41 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         if (_hashCode.HasValue)
             return _hashCode.Value;
 
+        // Use HashCode struct for modern hash combining
         var hash = new HashCode();
-        foreach (var indicator in _indicators.OrderBy(i => i.GetType().FullName))
+
+        // Add the type name and count of indicators to the hash
+        hash.Add(_indicators.Count);
+
+        foreach (var indicator in _indicators)
         {
+            // Add the fully qualified name of each indicator type
             hash.Add(indicator.GetType().FullName);
-            hash.Add(indicator.GetParameters().GetHashCode());
+
+            // Now hash all parameter values directly
+            var parameters = indicator.GetParameters();
+            var properties = parameters.GetProperties();
+
+            foreach (var prop in properties)
+            {
+                // Include the name in the hash
+                hash.Add(prop.Name);
+
+                // Include the actual value based on its type
+                if (prop.Value is int intValue)
+                {
+                    hash.Add(intValue);
+                }
+                else if (prop.Value is double doubleValue)
+                {
+                    hash.Add(doubleValue);
+                }
+                else
+                {
+                    // For any other type, use ToString
+                    hash.Add(prop.Value?.ToString() ?? "null");
+                }
+            }
         }
         _hashCode = hash.ToHashCode();
         return _hashCode.Value;
@@ -296,5 +268,21 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
     public void InvalidateCache()
     {
         _hashCode = null;
+    }
+    // Validates the actual number of available permutations by direct iteration
+    public int ValidatePermutations()
+    {
+        var clone = DeepClone();
+        clone.ResetIteration();
+
+        int count = 1; // Start with 1 for initial state
+        int maxCount = 5000000; // Safety limit to prevent infinite loops
+
+        while (clone.Next() && count < maxCount)
+        {
+            count++;
+        }
+
+        return count;
     }
 }

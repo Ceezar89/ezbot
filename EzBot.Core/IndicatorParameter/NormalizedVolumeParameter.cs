@@ -8,21 +8,22 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private int _normalHighVolumeRange = 100;
 
     // Ranges
-    private static readonly (int Min, int Max) VolumePeriodRange = (40, 100);
-    private static readonly (int Min, int Max) HighVolumeRange = (50, 200);
-    private static readonly (int Min, int Max) LowVolumeRange = (50, 200);
-    private static readonly (int Min, int Max) NormalHighVolumeRangeRange = (50, 150);
+    private static readonly (int Min, int Max) VolumePeriodRange = (20, 30);
+    private static readonly (int Min, int Max) HighVolumeRange = (90, 110);
+    private static readonly (int Min, int Max) LowVolumeRange = (70, 90);
+    private static readonly (int Min, int Max) NormalHighVolumeRangeRange = (70, 90);
 
     // Steps
-    private const int VolumePeriodRangeStep = 20;
-    private const int HighVolumeRangeStep = 50;
-    private const int LowVolumeRangeStep = 50;
-    private const int NormalHighVolumeRangeRangeStep = 50;
+    private const int VolumePeriodRangeStep = 5;
+    private const int HighVolumeRangeStep = 10;
+    private const int LowVolumeRangeStep = 10;
+    private const int NormalHighVolumeRangeRangeStep = 10;
 
-    private static readonly int VolumePeriodPermutations = (VolumePeriodRange.Max - VolumePeriodRange.Min) / VolumePeriodRangeStep + 1;
-    private static readonly int HighVolumePermutations = (HighVolumeRange.Max - HighVolumeRange.Min) / HighVolumeRangeStep + 1;
-    private static readonly int LowVolumePermutations = (LowVolumeRange.Max - LowVolumeRange.Min) / LowVolumeRangeStep + 1;
-    private static readonly int NormalHighVolumeRangePermutations = (NormalHighVolumeRangeRange.Max - NormalHighVolumeRangeRange.Min) / NormalHighVolumeRangeRangeStep + 1;
+    // Correctly calculate the number of steps for each parameter range
+    private static readonly int VolumePeriodPermutations = CalculateSteps(VolumePeriodRange.Min, VolumePeriodRange.Max, VolumePeriodRangeStep);
+    private static readonly int HighVolumePermutations = CalculateSteps(HighVolumeRange.Min, HighVolumeRange.Max, HighVolumeRangeStep);
+    private static readonly int LowVolumePermutations = CalculateSteps(LowVolumeRange.Min, LowVolumeRange.Max, LowVolumeRangeStep);
+    private static readonly int NormalHighVolumeRangePermutations = CalculateSteps(NormalHighVolumeRangeRange.Min, NormalHighVolumeRangeRange.Max, NormalHighVolumeRangeRangeStep);
 
     public static readonly int TotalPermutations = VolumePeriodPermutations * HighVolumePermutations * LowVolumePermutations * NormalHighVolumeRangePermutations;
 
@@ -83,6 +84,11 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
 
     public NormalizedVolumeParameter() : base("normalized_volume")
     {
+        // Always initialize to the minimum values of the range
+        VolumePeriod = VolumePeriodRange.Min;
+        HighVolume = HighVolumeRange.Min;
+        LowVolume = LowVolumeRange.Min;
+        NormalHighVolumeRange = NormalHighVolumeRangeRange.Min;
     }
 
     public NormalizedVolumeParameter(int volumePeriod, int highVolume, int lowVolume, int normalHighVolumeRange)
@@ -96,21 +102,64 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
 
     public override void IncrementSingle()
     {
-        if (IncrementValue(ref _volumePeriod, VolumePeriodRangeStep, VolumePeriodRange))
+        // Increment parameters one by one, starting from the least significant
+        // When a parameter is successfully incremented, return immediately
+
+        // Start with the least significant parameter
+        if (_normalHighVolumeRange + NormalHighVolumeRangeRangeStep <= NormalHighVolumeRangeRange.Max)
+        {
+            _normalHighVolumeRange += NormalHighVolumeRangeRangeStep;
             return;
-        if (IncrementValue(ref _highVolume, HighVolumeRangeStep, HighVolumeRange))
+        }
+
+        // Reset and try to increment the next parameter
+        _normalHighVolumeRange = NormalHighVolumeRangeRange.Min;
+        if (_lowVolume + LowVolumeRangeStep <= LowVolumeRange.Max)
+        {
+            _lowVolume += LowVolumeRangeStep;
             return;
-        if (IncrementValue(ref _lowVolume, LowVolumeRangeStep, LowVolumeRange))
+        }
+
+        // Reset and try to increment the next parameter
+        _lowVolume = LowVolumeRange.Min;
+        if (_highVolume + HighVolumeRangeStep <= HighVolumeRange.Max)
+        {
+            _highVolume += HighVolumeRangeStep;
             return;
-        IncrementValue(ref _normalHighVolumeRange, NormalHighVolumeRangeRangeStep, NormalHighVolumeRangeRange);
+        }
+
+        // Reset and try to increment the final parameter
+        _highVolume = HighVolumeRange.Min;
+        if (_volumePeriod + VolumePeriodRangeStep <= VolumePeriodRange.Max)
+        {
+            _volumePeriod += VolumePeriodRangeStep;
+        }
     }
 
     public override bool CanIncrement()
     {
-        return VolumePeriod < VolumePeriodRange.Max
-            || HighVolume < HighVolumeRange.Max
-            || LowVolume < LowVolumeRange.Max
-            || NormalHighVolumeRange < NormalHighVolumeRangeRange.Max;
+        // Check if any parameter can still be incremented
+        if (_normalHighVolumeRange + NormalHighVolumeRangeRangeStep <= NormalHighVolumeRangeRange.Max)
+            return true;
+
+        if (_lowVolume + LowVolumeRangeStep <= LowVolumeRange.Max)
+            return true;
+
+        if (_highVolume + HighVolumeRangeStep <= HighVolumeRange.Max)
+            return true;
+
+        if (_volumePeriod + VolumePeriodRangeStep <= VolumePeriodRange.Max)
+            return true;
+
+        return false;
+    }
+
+    public override void Reset()
+    {
+        VolumePeriod = VolumePeriodRange.Min;
+        HighVolume = HighVolumeRange.Min;
+        LowVolume = LowVolumeRange.Min;
+        NormalHighVolumeRange = NormalHighVolumeRangeRange.Min;
     }
 
     public override NormalizedVolumeParameter DeepClone()

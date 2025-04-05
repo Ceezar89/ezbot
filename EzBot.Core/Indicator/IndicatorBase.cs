@@ -21,7 +21,7 @@ public abstract class IndicatorBase<TParameter>(TParameter parameter) : IIndicat
         }
         else
         {
-            // For other implementations like BarDataCollectionView, process directly
+            // For other implementations, create a list as before
             var barsList = new List<BarData>(bars.Count);
             for (int i = 0; i < bars.Count; i++)
             {

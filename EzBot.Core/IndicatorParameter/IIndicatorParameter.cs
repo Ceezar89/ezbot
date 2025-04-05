@@ -10,4 +10,5 @@ public interface IIndicatorParameter : IEquatable<IIndicatorParameter>
     IIndicatorParameter DeepClone();
     IIndicatorParameter GetRandomNeighbor(Random random);
     int GetPermutationCount();
+    void Reset();
 }
