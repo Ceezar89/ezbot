@@ -3,6 +3,8 @@ using EzBot.Core.Strategy;
 using EzBot.Models;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace EzBot.Core.Indicator;
 
@@ -195,20 +197,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         InvalidateCache();
     }
 
-
-    private static IEnumerable<List<T>> CartesianProduct<T>(List<List<T>> sequences)
-    {
-        IEnumerable<List<T>> emptyProduct = [[]];
-
-        return sequences.Aggregate(
-            emptyProduct,
-            (accumulator, sequence) =>
-                from acc in accumulator
-                from item in sequence
-                select acc.Concat([item]).ToList()
-        );
-    }
-
     public IEnumerator<IIndicator> GetEnumerator() => _indicators.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => _indicators.GetEnumerator();
     public override bool Equals(object? obj) => Equals(obj as IndicatorCollection);
@@ -275,20 +263,34 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
     {
         _hashCode = null;
     }
-    // Validates the actual number of available permutations by direct iteration
-    public int ValidatePermutations()
+
+    /// <summary>
+    /// Generates all possible parameter permutation combinations for the current set of indicators
+    /// Returns them as binary-serialized parameter sets to minimize memory usage
+    /// </summary>
+    /// <returns>Dictionary mapping indicator index to its parameter permutations</returns>
+    public Dictionary<int, List<byte[]>> GenerateAllParameterPermutations()
     {
-        var clone = DeepClone();
-        clone.ResetIteration();
+        if (_indicators.Count == 0)
+            return new Dictionary<int, List<byte[]>>();
 
-        int count = 1; // Start with 1 for initial state
-        int maxCount = 5000000; // Safety limit to prevent infinite loops
+        var result = new Dictionary<int, List<byte[]>>();
 
-        while (clone.Next() && count < maxCount)
+        // Generate all permutations for each indicator
+        for (int i = 0; i < _indicators.Count; i++)
         {
-            count++;
+            var indicator = _indicators[i];
+            var paramType = indicator.GetParameters().GetType();
+
+            // Invoke the static GenerateAllPermutations method via reflection
+            var method = paramType.GetMethod("GenerateAllPermutations", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            if (method == null)
+                throw new InvalidOperationException($"GenerateAllPermutations method not found for {paramType.Name}");
+
+            var permutations = (List<byte[]>)method.Invoke(null, null)!;
+            result[i] = permutations;
         }
 
-        return count;
+        return result;
     }
 }

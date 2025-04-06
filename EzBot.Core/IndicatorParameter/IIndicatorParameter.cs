@@ -11,4 +11,6 @@ public interface IIndicatorParameter : IEquatable<IIndicatorParameter>
     IIndicatorParameter GetRandomNeighbor(Random random);
     int GetPermutationCount();
     void Reset();
+    byte[] ToBinary();
+    IIndicatorParameter FromBinary(byte[] data);
 }

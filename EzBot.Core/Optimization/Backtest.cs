@@ -5,7 +5,8 @@ namespace EzBot.Core.Optimization;
 
 public static class Backtest
 {
-    private const int WarmupPeriod = 30;
+    private const int WarmupPeriod = 10;
+    private const int MinBarsForTermination = 100;
 
     public static BacktestResult Run(ITradingStrategy strategy, List<BarData> historicalData, BacktestOptions opt)
     {
@@ -206,20 +207,44 @@ public static class Backtest
 
             double currentDrawdown = (peakBalance - currentBalance) / peakBalance;
 
+
             // Early termination check for obviously poor strategies
             // Only apply after we've processed enough bars to have statistically significant results
-            // Disabled entirely - we'll let all strategies complete 
-            if (i > WarmupPeriod)
+            if (i > MinBarsForTermination)
             {
                 string terminationReason = string.Empty;
 
-                if (currentDrawdown > maxDrawdown)
+                // Progressive threshold: Allow higher drawdown early, stricter as test progresses
+                double progressFactor = Math.Min(1.0, (double)(i - MinBarsForTermination) / (historicalDataCount - MinBarsForTermination));
+                double adjustedMaxDrawdown = maxDrawdown * (1.5 - 0.5 * progressFactor); // 150% of max initially, scaling to 100% by end
+
+                // Calculate drawdown trend over last 50 bars (if available)
+                int lookbackBars = Math.Min(50, i - MinBarsForTermination);
+                if (lookbackBars > 10 && currentDrawdown > adjustedMaxDrawdown * 0.7) // Only check trend for significant drawdowns
                 {
-                    terminationReason = $"Excessive drawdown: {currentDrawdown:P2} > {maxDrawdown:P2}";
+                    // Calculate the start of our lookback period
+                    int previousBarIndex = i - lookbackBars;
+
+                    // Fetch or recalculate the balance at that point
+                    double previousBalanceRatio = account.GetHistoricalBalance(previousBarIndex) / peakBalance;
+                    double previousDrawdown = 1.0 - previousBalanceRatio;
+
+                    // Only terminate if current drawdown is worse than previous AND exceeds threshold
+                    if (currentDrawdown > adjustedMaxDrawdown && currentDrawdown > previousDrawdown * 1.05) // Drawdown getting 5% worse
+                    {
+                        terminationReason = $"Worsening drawdown: {currentDrawdown:P2} > {adjustedMaxDrawdown:P2}, deteriorating trend";
+                    }
                 }
-                else if (inactiveDaysCount > maxDaysInactive)
+                else if (currentDrawdown > adjustedMaxDrawdown * 1.5) // Hard limit for extreme drawdowns regardless of trend
                 {
-                    terminationReason = $"Extended inactivity: {inactiveDaysCount} days > {maxDaysInactive} days";
+                    terminationReason = $"Extreme drawdown: {currentDrawdown:P2} > {adjustedMaxDrawdown * 1.5:P2}";
+                }
+
+                // Use progressive inactivity limit too
+                double adjustedMaxInactivity = maxDaysInactive * (1.0 + 0.5 * (1.0 - progressFactor)); // 150% of max initially, scaling to 100% by end
+                if (inactiveDaysCount > adjustedMaxInactivity)
+                {
+                    terminationReason = $"Extended inactivity: {inactiveDaysCount} days > {adjustedMaxInactivity:F1} days";
                 }
 
                 if (!string.IsNullOrEmpty(terminationReason))
@@ -227,6 +252,10 @@ public static class Backtest
                     var earlyTerminationResult = account.GenerateResult();
                     earlyTerminationResult.TerminatedEarly = true;
                     earlyTerminationResult.TerminationReason = terminationReason;
+
+                    // Record how much of the backtest was completed before termination
+                    earlyTerminationResult.CompletionPercentage = (double)(i - WarmupPeriod) / (historicalDataCount - WarmupPeriod);
+
                     return earlyTerminationResult;
                 }
             }

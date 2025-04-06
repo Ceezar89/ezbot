@@ -23,6 +23,69 @@ public class AtrBandsParameter : IndicatorParameterBase
 
     public static readonly int TotalPermutations = PeriodPermutations * MultiplierPermutations * RiskRewardRatioPermutations;
 
+    // Type identifier for AtrBandsParameter (unique across all parameter types)
+    private const byte TYPE_ID = 0x01;
+
+    /// <summary>
+    /// Creates an instance from binary data without using the factory
+    /// </summary>
+    public override AtrBandsParameter FromBinary(byte[] data)
+    {
+        // Extract name
+        int nameLength = BitConverter.ToInt32(data, 1);
+        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[data.Length - (5 + nameLength)];
+        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
+
+        return FromBinary(name, paramData);
+    }
+
+    protected override byte GetTypeIdentifier() => TYPE_ID;
+
+    protected override byte[] GetParameterSpecificBinaryData()
+    {
+        byte[] data = new byte[16]; // 4 bytes for Period, 8 bytes for Multiplier, 8 bytes for RiskRewardRatio
+
+        // Store Period (4 bytes)
+        BitConverter.GetBytes(_period).CopyTo(data, 0);
+
+        // Store Multiplier (8 bytes)
+        BitConverter.GetBytes(_multiplier).CopyTo(data, 4);
+
+        // Store RiskRewardRatio (8 bytes)
+        BitConverter.GetBytes(_riskRewardRatio).CopyTo(data, 12);
+
+        return data;
+    }
+
+    // Static method to create AtrBandsParameter from binary data
+    public static AtrBandsParameter FromBinary(string name, byte[] data)
+    {
+        if (data.Length != 16)
+            throw new ArgumentException("Invalid data length for AtrBandsParameter");
+
+        int period = BitConverter.ToInt32(data, 0);
+        double multiplier = BitConverter.ToDouble(data, 4);
+        double riskRewardRatio = BitConverter.ToDouble(data, 12);
+
+        return new AtrBandsParameter(name, period, multiplier, riskRewardRatio);
+    }
+
+    // Register the type with the factory method
+    static AtrBandsParameter()
+    {
+        // This will be called when the class is first used
+        RegisterType();
+    }
+
+    private static void RegisterType()
+    {
+        // Register this type with the factory
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+    }
+
     public override int GetPermutationCount() => TotalPermutations;
 
     public override List<ParameterDescriptor> GetProperties()
@@ -157,13 +220,5 @@ public class AtrBandsParameter : IndicatorParameterBase
     protected override int GetAdditionalHashCodeComponents()
     {
         return HashCode.Combine(Period, Multiplier, RiskRewardRatio);
-    }
-
-    protected override bool EqualsCore(IIndicatorParameter other)
-    {
-        var p = (AtrBandsParameter)other;
-        return Period == p.Period
-                && Multiplier == p.Multiplier
-                && RiskRewardRatio == p.RiskRewardRatio;
     }
 }

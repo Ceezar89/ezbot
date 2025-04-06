@@ -30,6 +30,9 @@ public class BacktestAccount
     private int lossCount;
     private const double RiskPercentage = 0.01; // 1% risk per trade
 
+    // Historical balance tracking
+    private readonly Dictionary<int, double> balanceHistory = new Dictionary<int, double>();
+
     // Trade management - use Dictionary for O(1) lookups by ID instead of list searches
     private readonly Dictionary<int, BacktestTrade> trades;
 
@@ -56,6 +59,9 @@ public class BacktestAccount
     /// </summary>
     public int OpenPosition(TradeType type, double price, double stopLoss, int barIndex)
     {
+        // Track balance at this bar
+        balanceHistory[barIndex] = CurrentBalance;
+
         // Calculate position size based on fixed percentage risk management
         double riskAmount = CurrentBalance * RiskPercentage; // 1% of current balance at risk
         double priceDifference = Math.Abs(price - stopLoss);
@@ -151,6 +157,9 @@ public class BacktestAccount
         // Update peak balance for drawdown calculations
         if (CurrentBalance > peakBalance)
             peakBalance = CurrentBalance;
+
+        // Track balance at this bar
+        balanceHistory[barIndex] = CurrentBalance;
     }
 
     /// <summary>
@@ -208,7 +217,8 @@ public class BacktestAccount
                 SharpeRatio = 0,
                 StartUnixTime = StartUnixTime,
                 EndUnixTime = EndUnixTime,
-                MaxDaysInactive = MaxDaysInactive
+                MaxDaysInactive = MaxDaysInactive,
+                CompletionPercentage = 1.0 // Set default completion to 100%
             };
         }
 
@@ -227,7 +237,8 @@ public class BacktestAccount
             SharpeRatio = sharpeRatio,
             StartUnixTime = StartUnixTime,
             EndUnixTime = EndUnixTime,
-            MaxDaysInactive = MaxDaysInactive
+            MaxDaysInactive = MaxDaysInactive,
+            CompletionPercentage = 1.0 // Set default completion to 100%
         };
     }
 
@@ -254,6 +265,31 @@ public class BacktestAccount
                 Console.WriteLine($"  Ratio: {riskRatio:F4}");
             }
         }
+    }
+
+    /// <summary>
+    /// Gets the historical balance at a specific bar index, or the initial balance if not recorded
+    /// </summary>
+    public double GetHistoricalBalance(int barIndex)
+    {
+        // If we have the exact bar, return it
+        if (balanceHistory.TryGetValue(barIndex, out double balance))
+            return balance;
+
+        // Otherwise find the closest previous bar
+        int closestBar = -1;
+        foreach (int bar in balanceHistory.Keys)
+        {
+            if (bar <= barIndex && bar > closestBar)
+                closestBar = bar;
+        }
+
+        // If we found a previous bar, return its balance
+        if (closestBar >= 0)
+            return balanceHistory[closestBar];
+
+        // Otherwise return initial balance
+        return InitialBalance;
     }
 }
 

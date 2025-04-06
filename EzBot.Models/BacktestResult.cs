@@ -20,6 +20,9 @@ public class BacktestResult
     public bool TerminatedEarly { get; set; } = false;
     public string TerminationReason { get; set; } = string.Empty;
 
+    // Tracks what percentage of the backtest was completed before termination
+    public double CompletionPercentage { get; set; } = 1.0; // Default to 100% complete
+
     // ADDED: Store Unix timestamps for exact calculations
     public long StartUnixTime { get; set; }
     public long EndUnixTime { get; set; }

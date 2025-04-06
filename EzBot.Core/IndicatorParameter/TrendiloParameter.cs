@@ -1,3 +1,7 @@
+using System;
+using System.Linq;
+using System.Collections.Generic;
+
 namespace EzBot.Core.IndicatorParameter;
 
 public class TrendiloParameter : IndicatorParameterBase
@@ -30,6 +34,86 @@ public class TrendiloParameter : IndicatorParameterBase
     private static readonly int BandMultiplierPermutations = CalculateSteps(BandMultiplierRange.Min, BandMultiplierRange.Max, BandMultiplierRangeStep);
 
     public static readonly int TotalPermutations = SmoothingPermutations * LookbackPermutations * AlmaOffsetPermutations * AlmaSigmaPermutations * BandMultiplierPermutations;
+
+    // Type identifier for TrendiloParameter (unique across all parameter types)
+    private const byte TYPE_ID = 0x07;
+
+    /// <summary>
+    /// Generates all possible parameter permutations as binary data
+    /// </summary>
+    /// <returns>List of binary representations of all permutations</returns>
+    public static List<byte[]> GenerateAllPermutations()
+    {
+        return GenerateAllPermutationsBinary(() => new TrendiloParameter());
+    }
+
+    /// <summary>
+    /// Creates an instance from binary data without using the factory
+    /// </summary>
+    public override TrendiloParameter FromBinary(byte[] data)
+    {
+        // Extract name
+        int nameLength = BitConverter.ToInt32(data, 1);
+        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[data.Length - (5 + nameLength)];
+        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
+
+        return FromBinary(name, paramData);
+    }
+
+    protected override byte GetTypeIdentifier() => TYPE_ID;
+
+    protected override byte[] GetParameterSpecificBinaryData()
+    {
+        byte[] data = new byte[24]; // 4 bytes for each of the 3 int parameters, 8 bytes for each of the 2 double parameters
+
+        // Store Smoothing (4 bytes)
+        BitConverter.GetBytes(_smoothing).CopyTo(data, 0);
+
+        // Store Lookback (4 bytes)
+        BitConverter.GetBytes(_lookback).CopyTo(data, 4);
+
+        // Store AlmaOffset (8 bytes)
+        BitConverter.GetBytes(_almaOffset).CopyTo(data, 8);
+
+        // Store AlmaSigma (4 bytes)
+        BitConverter.GetBytes(_almaSigma).CopyTo(data, 16);
+
+        // Store BandMultiplier (8 bytes)
+        BitConverter.GetBytes(_bandMultiplier).CopyTo(data, 20);
+
+        return data;
+    }
+
+    // Static method to create TrendiloParameter from binary data
+    public static TrendiloParameter FromBinary(string name, byte[] data)
+    {
+        if (data.Length != 24)
+            throw new ArgumentException("Invalid data length for TrendiloParameter");
+
+        int smoothing = BitConverter.ToInt32(data, 0);
+        int lookback = BitConverter.ToInt32(data, 4);
+        double almaOffset = BitConverter.ToDouble(data, 8);
+        int almaSigma = BitConverter.ToInt32(data, 16);
+        double bandMultiplier = BitConverter.ToDouble(data, 20);
+
+        return new TrendiloParameter(name, smoothing, lookback, almaOffset, almaSigma, bandMultiplier);
+    }
+
+    // Register the type with the factory method
+    static TrendiloParameter()
+    {
+        // This will be called when the class is first used
+        RegisterType();
+    }
+
+    private static void RegisterType()
+    {
+        // Register this type with the factory
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+    }
 
     public override int GetPermutationCount()
     {
@@ -220,15 +304,5 @@ public class TrendiloParameter : IndicatorParameterBase
     protected override int GetAdditionalHashCodeComponents()
     {
         return HashCode.Combine(Smoothing, Lookback, AlmaOffset, AlmaSigma, BandMultiplier);
-    }
-
-    protected override bool EqualsCore(IIndicatorParameter other)
-    {
-        var p = (TrendiloParameter)other;
-        return Smoothing == p.Smoothing
-            && Lookback == p.Lookback
-            && AlmaOffset == p.AlmaOffset
-            && AlmaSigma == p.AlmaSigma
-            && BandMultiplier == p.BandMultiplier;
     }
 }

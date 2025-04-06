@@ -1,4 +1,6 @@
 using EzBot.Models;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace EzBot.Core.IndicatorParameter;
 
@@ -20,6 +22,67 @@ public class LwpiParameter : IndicatorParameterBase
     private static readonly int SmoothingPeriodPermutations = CalculateSteps(SmoothingPeriodRange.Min, SmoothingPeriodRange.Max, SmoothingPeriodRangeStep);
 
     public static readonly int TotalPermutations = PeriodPermutations * SmoothingPeriodPermutations;
+
+    // Type identifier for LwpiParameter (unique across all parameter types)
+    private const byte TYPE_ID = 0x04;
+
+    /// <summary>
+    /// Creates an instance from binary data without using the factory
+    /// </summary>
+    public override LwpiParameter FromBinary(byte[] data)
+    {
+        // Extract name
+        int nameLength = BitConverter.ToInt32(data, 1);
+        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[data.Length - (5 + nameLength)];
+        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
+
+        return FromBinary(name, paramData);
+    }
+
+    protected override byte GetTypeIdentifier() => TYPE_ID;
+
+    protected override byte[] GetParameterSpecificBinaryData()
+    {
+        byte[] data = new byte[8]; // 4 bytes for Period, 4 bytes for SmoothingPeriod
+
+        // Store Period (4 bytes)
+        BitConverter.GetBytes(_period).CopyTo(data, 0);
+
+        // Store SmoothingPeriod (4 bytes)
+        BitConverter.GetBytes(_smoothingPeriod).CopyTo(data, 4);
+
+        return data;
+    }
+
+    // Static method to create LwpiParameter from binary data
+    public static LwpiParameter FromBinary(string name, byte[] data)
+    {
+        if (data.Length != 8)
+            throw new ArgumentException("Invalid data length for LwpiParameter");
+
+        int period = BitConverter.ToInt32(data, 0);
+        int smoothingPeriod = BitConverter.ToInt32(data, 4);
+
+        var param = new LwpiParameter(period, smoothingPeriod);
+        param.Name = name;
+        return param;
+    }
+
+    // Register the type with the factory method
+    static LwpiParameter()
+    {
+        // This will be called when the class is first used
+        RegisterType();
+    }
+
+    private static void RegisterType()
+    {
+        // Register this type with the factory
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+    }
 
     public override int GetPermutationCount() => TotalPermutations;
 
@@ -130,11 +193,5 @@ public class LwpiParameter : IndicatorParameterBase
     protected override int GetAdditionalHashCodeComponents()
     {
         return HashCode.Combine(Period, SmoothingPeriod);
-    }
-
-    protected override bool EqualsCore(IIndicatorParameter other)
-    {
-        var p = (LwpiParameter)other;
-        return Period == p.Period && SmoothingPeriod == p.SmoothingPeriod;
     }
 }

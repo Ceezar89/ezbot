@@ -1,4 +1,6 @@
 using EzBot.Models;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace EzBot.Core.IndicatorParameter;
 
@@ -20,6 +22,67 @@ public class EtmaParameter : IndicatorParameterBase
     private static readonly int SignalStrengthPermutations = CalculateSteps(SignalStrengthRange.Min, SignalStrengthRange.Max, SignalStrengthRangeStep);
 
     public static readonly int TotalPermutations = LengthPermutations * SignalStrengthPermutations;
+
+    // Type identifier for EtmaParameter (unique across all parameter types)
+    private const byte TYPE_ID = 0x03;
+
+    /// <summary>
+    /// Creates an instance from binary data without using the factory
+    /// </summary>
+    public override EtmaParameter FromBinary(byte[] data)
+    {
+        // Extract name
+        int nameLength = BitConverter.ToInt32(data, 1);
+        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[data.Length - (5 + nameLength)];
+        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
+
+        return FromBinary(name, paramData);
+    }
+
+    protected override byte GetTypeIdentifier() => TYPE_ID;
+
+    protected override byte[] GetParameterSpecificBinaryData()
+    {
+        byte[] data = new byte[8]; // 4 bytes for Length, 4 bytes for SignalStrength
+
+        // Store Length (4 bytes)
+        BitConverter.GetBytes(_length).CopyTo(data, 0);
+
+        // Store SignalStrength (4 bytes)
+        BitConverter.GetBytes((int)_signalStrength).CopyTo(data, 4);
+
+        return data;
+    }
+
+    // Static method to create EtmaParameter from binary data
+    public static EtmaParameter FromBinary(string name, byte[] data)
+    {
+        if (data.Length != 8)
+            throw new ArgumentException("Invalid data length for EtmaParameter");
+
+        int length = BitConverter.ToInt32(data, 0);
+        SignalStrength signalStrength = (SignalStrength)BitConverter.ToInt32(data, 4);
+
+        var param = new EtmaParameter(length, signalStrength);
+        param.Name = name;
+        return param;
+    }
+
+    // Register the type with the factory method
+    static EtmaParameter()
+    {
+        // This will be called when the class is first used
+        RegisterType();
+    }
+
+    private static void RegisterType()
+    {
+        // Register this type with the factory
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+    }
 
     public override int GetPermutationCount() => TotalPermutations;
 
@@ -135,11 +198,5 @@ public class EtmaParameter : IndicatorParameterBase
     protected override int GetAdditionalHashCodeComponents()
     {
         return HashCode.Combine(Length, SignalStrength);
-    }
-
-    protected override bool EqualsCore(IIndicatorParameter other)
-    {
-        var p = (EtmaParameter)other;
-        return Length == p.Length && SignalStrength == p.SignalStrength;
     }
 }

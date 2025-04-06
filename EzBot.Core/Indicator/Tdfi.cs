@@ -1,7 +1,5 @@
 using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
-using System;
-using System.Collections.Generic;
 
 namespace EzBot.Core.Indicator
 {

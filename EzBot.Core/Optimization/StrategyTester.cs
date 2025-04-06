@@ -108,7 +108,7 @@ public class StrategyTester
         }
 
         // Directly count actual permutations (can be slow for large numbers)
-        int actualCount = templateCollection.ValidatePermutations();
+        int actualCount = templateCollection.GetTotalParameterPermutations();
 
         // Check if counts match
         if (theoreticalTotal != actualCount)
@@ -128,7 +128,7 @@ public class StrategyTester
                 // Count actual permutations for this single indicator
                 var singleIndCollection = new IndicatorCollection();
                 singleIndCollection.Add((IIndicator)Activator.CreateInstance(indicator.GetType(), indParams.DeepClone())!);
-                int actualIndCount = singleIndCollection.ValidatePermutations();
+                int actualIndCount = singleIndCollection.GetTotalParameterPermutations();
 
                 string match = indPermCount == actualIndCount ? "✓" : "✗";
                 Console.WriteLine($"- {indType}: Theoretical {indPermCount}, Actual {actualIndCount} {match}");

@@ -1,4 +1,6 @@
 using EzBot.Models;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace EzBot.Core.IndicatorParameter;
 
@@ -16,6 +18,63 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
     private static readonly int PeriodPermutations = CalculateSteps(PeriodRange.Min, PeriodRange.Max, PeriodRangeStep);
 
     public static readonly int TotalPermutations = PeriodPermutations;
+
+    // Type identifier for McGinleyDynamicParameter (unique across all parameter types)
+    private const byte TYPE_ID = 0x05;
+
+    /// <summary>
+    /// Creates an instance from binary data without using the factory
+    /// </summary>
+    public override McGinleyDynamicParameter FromBinary(byte[] data)
+    {
+        // Extract name
+        int nameLength = BitConverter.ToInt32(data, 1);
+        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[data.Length - (5 + nameLength)];
+        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
+
+        return FromBinary(name, paramData);
+    }
+
+    protected override byte GetTypeIdentifier() => TYPE_ID;
+
+    protected override byte[] GetParameterSpecificBinaryData()
+    {
+        byte[] data = new byte[4]; // 4 bytes for Period
+
+        // Store Period (4 bytes)
+        BitConverter.GetBytes(_period).CopyTo(data, 0);
+
+        return data;
+    }
+
+    // Static method to create McGinleyDynamicParameter from binary data
+    public static McGinleyDynamicParameter FromBinary(string name, byte[] data)
+    {
+        if (data.Length != 4)
+            throw new ArgumentException("Invalid data length for McGinleyDynamicParameter");
+
+        int period = BitConverter.ToInt32(data, 0);
+
+        var param = new McGinleyDynamicParameter(period);
+        param.Name = name;
+        return param;
+    }
+
+    // Register the type with the factory method
+    static McGinleyDynamicParameter()
+    {
+        // This will be called when the class is first used
+        RegisterType();
+    }
+
+    private static void RegisterType()
+    {
+        // Register this type with the factory
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+    }
 
     public override int GetPermutationCount() => TotalPermutations;
 
@@ -89,11 +148,5 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
     protected override int GetAdditionalHashCodeComponents()
     {
         return Period.GetHashCode();
-    }
-
-    protected override bool EqualsCore(IIndicatorParameter other)
-    {
-        var p = (McGinleyDynamicParameter)other;
-        return Period == p.Period;
     }
 }

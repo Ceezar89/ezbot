@@ -1,3 +1,7 @@
+using System;
+using System.Linq;
+using System.Collections.Generic;
+
 namespace EzBot.Core.IndicatorParameter;
 
 public class NormalizedVolumeParameter : IndicatorParameterBase
@@ -26,6 +30,84 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private static readonly int NormalHighVolumeRangePermutations = CalculateSteps(NormalHighVolumeRangeRange.Min, NormalHighVolumeRangeRange.Max, NormalHighVolumeRangeRangeStep);
 
     public static readonly int TotalPermutations = VolumePeriodPermutations * HighVolumePermutations * LowVolumePermutations * NormalHighVolumeRangePermutations;
+
+    // Type identifier for NormalizedVolumeParameter (unique across all parameter types)
+    private const byte TYPE_ID = 0x06;
+
+    /// <summary>
+    /// Generates all possible parameter permutations as binary data
+    /// </summary>
+    /// <returns>List of binary representations of all permutations</returns>
+    public static List<byte[]> GenerateAllPermutations()
+    {
+        return GenerateAllPermutationsBinary(() => new NormalizedVolumeParameter());
+    }
+
+    /// <summary>
+    /// Creates an instance from binary data without using the factory
+    /// </summary>
+    public override NormalizedVolumeParameter FromBinary(byte[] data)
+    {
+        // Extract name
+        int nameLength = BitConverter.ToInt32(data, 1);
+        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[data.Length - (5 + nameLength)];
+        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
+
+        return FromBinary(name, paramData);
+    }
+
+    protected override byte GetTypeIdentifier() => TYPE_ID;
+
+    protected override byte[] GetParameterSpecificBinaryData()
+    {
+        byte[] data = new byte[16]; // 4 bytes for each of the 4 int parameters
+
+        // Store VolumePeriod (4 bytes)
+        BitConverter.GetBytes(_volumePeriod).CopyTo(data, 0);
+
+        // Store HighVolume (4 bytes)
+        BitConverter.GetBytes(_highVolume).CopyTo(data, 4);
+
+        // Store LowVolume (4 bytes)
+        BitConverter.GetBytes(_lowVolume).CopyTo(data, 8);
+
+        // Store NormalHighVolumeRange (4 bytes)
+        BitConverter.GetBytes(_normalHighVolumeRange).CopyTo(data, 12);
+
+        return data;
+    }
+
+    // Static method to create NormalizedVolumeParameter from binary data
+    public static NormalizedVolumeParameter FromBinary(string name, byte[] data)
+    {
+        if (data.Length != 16)
+            throw new ArgumentException("Invalid data length for NormalizedVolumeParameter");
+
+        int volumePeriod = BitConverter.ToInt32(data, 0);
+        int highVolume = BitConverter.ToInt32(data, 4);
+        int lowVolume = BitConverter.ToInt32(data, 8);
+        int normalHighVolumeRange = BitConverter.ToInt32(data, 12);
+
+        var param = new NormalizedVolumeParameter(volumePeriod, highVolume, lowVolume, normalHighVolumeRange);
+        param.Name = name;
+        return param;
+    }
+
+    // Register the type with the factory method
+    static NormalizedVolumeParameter()
+    {
+        // This will be called when the class is first used
+        RegisterType();
+    }
+
+    private static void RegisterType()
+    {
+        // Register this type with the factory
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+    }
 
     public override int GetPermutationCount() => TotalPermutations;
 
@@ -187,14 +269,5 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     protected override int GetAdditionalHashCodeComponents()
     {
         return HashCode.Combine(VolumePeriod, HighVolume, LowVolume, NormalHighVolumeRange);
-    }
-
-    protected override bool EqualsCore(IIndicatorParameter other)
-    {
-        var p = (NormalizedVolumeParameter)other;
-        return VolumePeriod == p.VolumePeriod
-            && HighVolume == p.HighVolume
-            && LowVolume == p.LowVolume
-            && NormalHighVolumeRange == p.NormalHighVolumeRange;
     }
 }
