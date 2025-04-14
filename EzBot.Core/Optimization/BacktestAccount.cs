@@ -17,6 +17,9 @@ public class BacktestAccount
     public int MaxDaysInactive { get; set; }
     public double DrawdownPercentage => peakBalance > 0 ? Math.Max(0, (peakBalance - CurrentBalance) / peakBalance) : 0;
 
+    // Add a field to track maximum drawdown
+    private double maxDrawdownPercentage = 0;
+
     // Time tracking
     public long StartUnixTime { get; set; }
     public long EndUnixTime { get; set; }
@@ -73,14 +76,15 @@ public class BacktestAccount
             priceDifference = price * 0.01;
         }
 
-        // Calculate position size: risk amount / (price difference / leverage)
-        double positionSize = riskAmount / (priceDifference / Leverage);
+        // FIXED CALCULATION: Calculate position size without multiplying by leverage
+        // This ensures the risk stays at 1% regardless of leverage
+        double positionSize = riskAmount / priceDifference;
+
+        // Calculate margin required (this is where leverage is applied)
+        double marginUsed = price * positionSize / Leverage;
 
         // Calculate the actual amount at risk - should be exactly 1% of balance
-        double actualRiskAmount = positionSize * priceDifference / Leverage;
-
-        // Calculate margin required
-        double marginUsed = price * positionSize / Leverage;
+        double actualRiskAmount = positionSize * priceDifference;
 
         // Calculate entry fee
         double entryFee = price * positionSize * (FeePercentage / 100.0);
@@ -154,6 +158,14 @@ public class BacktestAccount
             totalLossAmount += Math.Abs(netPnl);
         }
 
+        // Calculate current drawdown before updating peak balance
+        if (peakBalance > 0)
+        {
+            double currentDrawdown = Math.Max(0, (peakBalance - CurrentBalance) / peakBalance);
+            // Update maximum drawdown if current drawdown is higher
+            maxDrawdownPercentage = Math.Max(maxDrawdownPercentage, currentDrawdown);
+        }
+
         // Update peak balance for drawdown calculations
         if (CurrentBalance > peakBalance)
             peakBalance = CurrentBalance;
@@ -222,8 +234,9 @@ public class BacktestAccount
             };
         }
 
-        // Calculate maximum drawdown
-        double drawdown = DrawdownPercentage;
+        // Calculate final drawdown and update max if needed
+        double finalDrawdown = DrawdownPercentage;
+        maxDrawdownPercentage = Math.Max(maxDrawdownPercentage, finalDrawdown);
 
         // Create and return the result
         return new BacktestResult
@@ -233,7 +246,7 @@ public class BacktestAccount
             TotalTrades = totalTrades,
             WinningTrades = winningTrades,
             LosingTrades = losingTrades,
-            MaxDrawdown = drawdown,
+            MaxDrawdown = maxDrawdownPercentage,
             SharpeRatio = sharpeRatio,
             StartUnixTime = StartUnixTime,
             EndUnixTime = EndUnixTime,
@@ -290,6 +303,14 @@ public class BacktestAccount
 
         // Otherwise return initial balance
         return InitialBalance;
+    }
+
+    /// <summary>
+    /// Updates the maximum drawdown if the provided value is greater than the current maximum
+    /// </summary>
+    public void UpdateMaxDrawdown(double drawdownValue)
+    {
+        maxDrawdownPercentage = Math.Max(maxDrawdownPercentage, drawdownValue);
     }
 }
 

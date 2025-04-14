@@ -28,7 +28,7 @@ public class StrategyTester
     private int terminatedEarlyCount = 0;
     // Timestamp for periodic saving
     private DateTime lastSaveTime = DateTime.Now;
-    private readonly TimeSpan saveInterval = TimeSpan.FromSeconds(120);
+    private readonly TimeSpan saveInterval = TimeSpan.FromSeconds(60);
 
     // Add dictionary to track termination reasons
     private readonly ConcurrentDictionary<string, int> terminationReasons = new();
@@ -41,7 +41,7 @@ public class StrategyTester
     private readonly long totalCombinations;
 
     // Batching for improved cache locality
-    private const int BatchSize = 100;
+    private const int BatchSize = 30;
 
     public StrategyTester(
         string dataFilePath,
@@ -283,11 +283,7 @@ public class StrategyTester
                         // Run backtest with the current parameters
                         var backtestResult = Backtest.Run(strategy, historicalData, backtestOptions);
 
-                        if (backtestResult.TotalTrades == 0)
-                        {
-                            continue;
-                        }
-                        else
+                        if (!backtestResult.TerminatedEarly && backtestResult.NetProfit > 0)
                         {
                             // Add successful result to collection
                             results.Add((parameters.DeepClone(), backtestResult));
@@ -415,18 +411,61 @@ public class StrategyTester
             // Create a list of test results
             var testResults = topResults.Select(r => new TestResult(r)).ToList();
 
-            // Create a unique filename based on timestamp
-            string fileName = $"top_{strategyType}_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+            // Create standardized filename with strategy, lookback days, and timeframe
+            string fileName = $"{strategyType}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}.json";
 
-            // Serialize with indentation for readability
-            var options = new JsonSerializerOptions
+            // Check if file exists and compare with new results
+            bool shouldSave = true;
+            if (File.Exists(fileName))
             {
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
+                try
+                {
+                    // Load existing file
+                    string existingJson = File.ReadAllText(fileName);
+                    var options = new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    };
 
-            string json = JsonSerializer.Serialize(testResults, options);
-            File.WriteAllText(fileName, json);
+                    var existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, options);
+
+                    // Compare best result from existing file with current best result
+                    if (existingResults != null && existingResults.Count > 0)
+                    {
+                        double existingBestProfit = existingResults.Max(r => r.Result.NetProfit);
+                        double newBestProfit = topResults[0].Result.NetProfit;
+
+                        // Only save if the new result is better
+                        shouldSave = newBestProfit > existingBestProfit;
+
+                        if (!shouldSave)
+                        {
+                            Console.WriteLine($"\nExisting results in {fileName} have higher profit (${existingBestProfit:F2} vs ${newBestProfit:F2}). File not updated.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // If there's an error reading the file, proceed with saving
+                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will overwrite with new results.");
+                    shouldSave = true;
+                }
+            }
+
+            if (shouldSave)
+            {
+                // Serialize with indentation for readability
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                string json = JsonSerializer.Serialize(testResults, options);
+                File.WriteAllText(fileName, json);
+
+                Console.WriteLine($"\nSaved top {count} results to {fileName}");
+            }
         }
         catch (Exception ex)
         {
@@ -496,20 +535,79 @@ public class StrategyTester
             // Create a JSON-friendly result
             var testResult = new TestResult(bestResult);
 
-            // Create a unique filename based on the strategy and statistics
-            string fileName = $"best_{strategyType}_{bestResult.Result.NetProfit:F0}_{bestResult.Result.WinRate:P0}.json";
+            // Create standardized filename with strategy, lookback days, and timeframe
+            string fileName = $"{strategyType}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}.json";
 
-            // Serialize with indentation for readability
-            var options = new JsonSerializerOptions
+            // Check if file exists and compare with new result
+            bool shouldSave = true;
+            if (File.Exists(fileName))
             {
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
+                try
+                {
+                    // Load existing file
+                    string existingJson = File.ReadAllText(fileName);
+                    var options = new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    };
 
-            string json = JsonSerializer.Serialize(testResult, options);
-            File.WriteAllText(fileName, json);
+                    // The file might contain a single result or an array of results
+                    // Try to deserialize as a single TestResult first
+                    TestResult? existingResult = null;
+                    List<TestResult>? existingResults = null;
 
-            Console.WriteLine($"\nSaved best result to {fileName}");
+                    try
+                    {
+                        existingResult = JsonSerializer.Deserialize<TestResult>(existingJson, options);
+                    }
+                    catch
+                    {
+                        // If it fails, try as a list
+                        existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, options);
+                    }
+
+                    // Get existing profit for comparison
+                    double existingBestProfit = 0;
+                    if (existingResult != null)
+                    {
+                        existingBestProfit = existingResult.Result.NetProfit;
+                    }
+                    else if (existingResults != null && existingResults.Count > 0)
+                    {
+                        existingBestProfit = existingResults.Max(r => r.Result.NetProfit);
+                    }
+
+                    // Only save if the new result is better
+                    double newProfit = bestResult.Result.NetProfit;
+                    shouldSave = newProfit > existingBestProfit;
+
+                    if (!shouldSave)
+                    {
+                        Console.WriteLine($"\nExisting result in {fileName} has higher profit (${existingBestProfit:F2} vs ${newProfit:F2}). File not updated.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // If there's an error reading the file, proceed with saving
+                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will overwrite with new result.");
+                    shouldSave = true;
+                }
+            }
+
+            if (shouldSave)
+            {
+                // Serialize with indentation for readability
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                string json = JsonSerializer.Serialize(testResult, options);
+                File.WriteAllText(fileName, json);
+
+                Console.WriteLine($"\nSaved best result to {fileName}");
+            }
         }
         catch (Exception ex)
         {

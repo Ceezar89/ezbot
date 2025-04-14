@@ -7,13 +7,13 @@ public class AtrBandsParameter : IndicatorParameterBase
     private double _riskRewardRatio = 1.1;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (10, 16);
-    private static readonly (double Min, double Max) MultiplierRange = (1.0, 4.0);
-    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.1, 1.5);
+    private static readonly (int Min, int Max) PeriodRange = (5, 40);
+    private static readonly (double Min, double Max) MultiplierRange = (1.0, 3.0);
+    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.0, 2.0);
 
     // Steps
-    private const int PeriodRangeStep = 2;
-    private const double MultiplierRangeStep = 1.0;
+    private const int PeriodRangeStep = 5;
+    private const double MultiplierRangeStep = 0.5;
     private const double RiskRewardRatioRangeStep = 0.2;
 
     // Correctly calculate the number of steps for each parameter range
@@ -92,7 +92,7 @@ public class AtrBandsParameter : IndicatorParameterBase
     {
         return [
             new ParameterDescriptor(_period, PeriodRange.Min, PeriodRange.Max, PeriodRangeStep, "Period"),
-            new ParameterDescriptor(_multiplier, MultiplierRange.Min, MultiplierRange.Max, MultiplierRangeStep, "Multiplier Upper"),
+            new ParameterDescriptor(_multiplier, MultiplierRange.Min, MultiplierRange.Max, MultiplierRangeStep, "Multiplier"),
             new ParameterDescriptor(_riskRewardRatio, RiskRewardRatioRange.Min, RiskRewardRatioRange.Max, RiskRewardRatioRangeStep, "Risk Reward Ratio")
         ];
     }

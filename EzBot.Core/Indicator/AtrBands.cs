@@ -64,8 +64,14 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
             UpperBand[i] = SrcUpper[i] + ATRValues[i] * Parameter.Multiplier;
             LowerBand[i] = SrcLower[i] - ATRValues[i] * Parameter.Multiplier;
 
-            ShortTakeProfit[i] = currentPrice - (UpperBand[i] - currentPrice) * Parameter.RiskRewardRatio;
-            LongTakeProfit[i] = currentPrice + (currentPrice - LowerBand[i]) * Parameter.RiskRewardRatio;
+            // Calculate take profit based on risk-reward ratio
+            // For long positions, distance to take profit = distance to stop * risk-reward ratio
+            double longStopDistance = currentPrice - LowerBand[i];
+            LongTakeProfit[i] = currentPrice + (longStopDistance * Parameter.RiskRewardRatio);
+
+            // For short positions, distance to take profit = distance to stop * risk-reward ratio
+            double shortStopDistance = UpperBand[i] - currentPrice;
+            ShortTakeProfit[i] = currentPrice - (shortStopDistance * Parameter.RiskRewardRatio);
         }
     }
 

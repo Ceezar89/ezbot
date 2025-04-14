@@ -33,7 +33,12 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
                 break;
             case StrategyType.McGinleyTrend:
                 _indicators.Add(new McGinleyDynamic(new McGinleyDynamicParameter()));
-                _indicators.Add(new Tdfi(new TdfiParameter()));
+                // _indicators.Add(new Tdfi(new TdfiParameter()));
+                _indicators.Add(new Lwpi(new LwpiParameter()));
+                _indicators.Add(new AtrBands(new AtrBandsParameter()));
+                break;
+            case StrategyType.SuperTrend:
+                _indicators.Add(new Supertrend(new SupertrendParameter()));
                 _indicators.Add(new Lwpi(new LwpiParameter()));
                 _indicators.Add(new AtrBands(new AtrBandsParameter()));
                 break;

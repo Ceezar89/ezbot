@@ -9,7 +9,7 @@ public class TdfiParameter : IndicatorParameterBase
     private int _lookback = 13;
 
     // Ranges
-    private static readonly (int Min, int Max) LookbackRange = (7, 19);
+    private static readonly (int Min, int Max) LookbackRange = (4, 30);
 
     // Steps
     private const int LookbackRangeStep = 2;

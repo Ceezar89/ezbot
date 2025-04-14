@@ -207,6 +207,8 @@ public static class Backtest
 
             double currentDrawdown = (peakBalance - currentBalance) / peakBalance;
 
+            // Call the method to update max drawdown in the account
+            account.UpdateMaxDrawdown(currentDrawdown);
 
             // Early termination check for obviously poor strategies
             // Only apply after we've processed enough bars to have statistically significant results

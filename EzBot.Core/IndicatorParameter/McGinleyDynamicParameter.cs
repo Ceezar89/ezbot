@@ -9,7 +9,7 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
     private int _period = 14;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (10, 30);
+    private static readonly (int Min, int Max) PeriodRange = (4, 30);
 
     // Steps
     private const int PeriodRangeStep = 2;

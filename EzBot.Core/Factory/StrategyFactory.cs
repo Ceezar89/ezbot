@@ -18,6 +18,7 @@ public static class StrategyFactory
         {
             StrategyType.PrecisionTrend => new PrecisionTrend(indicators),
             StrategyType.McGinleyTrend => new McGinleyTrend(indicators),
+            StrategyType.SuperTrend => new SuperTrend(indicators),
             _ => throw new ArgumentException("Unknown StrategyType")
         };
     }
