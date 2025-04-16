@@ -12,8 +12,6 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
 
     protected override void ProcessBarData(List<BarData> bars)
     {
-        double currentPrice = bars.Last().Close;
-
         int count = bars.Count;
         if (count < Parameter.Period)
             throw new ArgumentException("Not enough data to calculate ATR Bands.");
@@ -64,14 +62,16 @@ public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParam
             UpperBand[i] = SrcUpper[i] + ATRValues[i] * Parameter.Multiplier;
             LowerBand[i] = SrcLower[i] - ATRValues[i] * Parameter.Multiplier;
 
-            // Calculate take profit based on risk-reward ratio
+            // Calculate take profit based on risk-reward ratio using the current bar's price
+            double currentBarPrice = bars[i].Close;
+
             // For long positions, distance to take profit = distance to stop * risk-reward ratio
-            double longStopDistance = currentPrice - LowerBand[i];
-            LongTakeProfit[i] = currentPrice + (longStopDistance * Parameter.RiskRewardRatio);
+            double longStopDistance = currentBarPrice - LowerBand[i];
+            LongTakeProfit[i] = currentBarPrice + (longStopDistance * Parameter.RiskRewardRatio);
 
             // For short positions, distance to take profit = distance to stop * risk-reward ratio
-            double shortStopDistance = UpperBand[i] - currentPrice;
-            ShortTakeProfit[i] = currentPrice - (shortStopDistance * Parameter.RiskRewardRatio);
+            double shortStopDistance = UpperBand[i] - currentBarPrice;
+            ShortTakeProfit[i] = currentBarPrice - (shortStopDistance * Parameter.RiskRewardRatio);
         }
     }
 

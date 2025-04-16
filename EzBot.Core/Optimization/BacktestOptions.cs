@@ -13,8 +13,9 @@ public class BacktestOptions
     public double MaxDrawdown { get; set; } = 0.3;
     public int MaxConcurrentTrades { get; set; } = 1;
     public int MaxDaysInactive { get; set; } = 7;
+    public double RiskPercentage { get; set; } = 1.0;
 
-    public BacktestOptions(double initialBalance, double feePercentage, int leverage, TimeFrame timeFrame, int lookbackDays, double maxDrawdown, int maxConcurrentTrades, int maxDaysInactive)
+    public BacktestOptions(double initialBalance, double feePercentage, int leverage, TimeFrame timeFrame, int lookbackDays, double maxDrawdown, int maxConcurrentTrades, int maxDaysInactive, double riskPercentage)
     {
         InitialBalance = initialBalance;
         FeePercentage = feePercentage;
@@ -24,5 +25,6 @@ public class BacktestOptions
         MaxDrawdown = maxDrawdown;
         MaxConcurrentTrades = maxConcurrentTrades;
         MaxDaysInactive = maxDaysInactive;
+        RiskPercentage = riskPercentage;
     }
 }

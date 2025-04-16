@@ -2,8 +2,7 @@ namespace EzBot.Core.Strategy;
 
 public enum StrategyType
 {
-    PrecisionTrend,
+    TrendsAndVolume,
+    EtmaTrend,
     McGinleyTrend,
-    SuperTrend,
-
 }

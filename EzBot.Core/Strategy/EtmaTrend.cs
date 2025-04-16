@@ -3,7 +3,7 @@ using EzBot.Models;
 
 namespace EzBot.Core.Strategy;
 
-public sealed class SuperTrend(IndicatorCollection Indicators) : TradingStrategyBase(Indicators)
+public sealed class EtmaTrend(IndicatorCollection Indicators) : TradingStrategyBase(Indicators)
 {
     protected override TradeType ExecuteStrategy()
     {

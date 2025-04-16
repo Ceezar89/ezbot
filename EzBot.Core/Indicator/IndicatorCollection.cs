@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
+using System.IO; // Added for BinaryReader/Writer if needed, though parameter methods handle it
 
 namespace EzBot.Core.Indicator;
 
@@ -25,31 +26,55 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
 
         switch (strategyType)
         {
-            case StrategyType.PrecisionTrend:
-                _indicators.Add(new Trendilo(new TrendiloParameter()));
-                _indicators.Add(new NormalizedVolume(new NormalizedVolumeParameter()));
-                _indicators.Add(new AtrBands(new AtrBandsParameter()));
+            case StrategyType.TrendsAndVolume:
                 _indicators.Add(new Etma(new EtmaParameter()));
+                _indicators.Add(new NormalizedVolume(new NormalizedVolumeParameter()));
+                _indicators.Add(new Trendilo(new TrendiloParameter()));
                 break;
             case StrategyType.McGinleyTrend:
                 _indicators.Add(new McGinleyDynamic(new McGinleyDynamicParameter()));
-                // _indicators.Add(new Tdfi(new TdfiParameter()));
                 _indicators.Add(new Lwpi(new LwpiParameter()));
-                _indicators.Add(new AtrBands(new AtrBandsParameter()));
+                // _indicators.Add(new Trendilo(new TrendiloParameter()));
                 break;
-            case StrategyType.SuperTrend:
-                _indicators.Add(new Supertrend(new SupertrendParameter()));
+            case StrategyType.EtmaTrend:
+                _indicators.Add(new Etma(new EtmaParameter()));
                 _indicators.Add(new Lwpi(new LwpiParameter()));
-                _indicators.Add(new AtrBands(new AtrBandsParameter()));
+                // _indicators.Add(new Trendilo(new TrendiloParameter()));
                 break;
             default:
                 throw new ArgumentException("Unknown StrategyType");
         }
+        // Always add AtrBands to the collection
+        _indicators.Add(new AtrBands(new AtrBandsParameter()));
     }
 
     public IndicatorCollection(IEnumerable<IIndicator> indicators)
     {
         _indicators = [.. indicators];
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the IndicatorCollection for a specific strategy type,
+    /// applying a given parameter permutation.
+    /// </summary>
+    /// <param name="strategyType">The type of strategy to initialize indicators for.</param>
+    /// <param name="parameterPermutation">A list of byte arrays representing the parameter state for each indicator, in order.</param>
+    /// <exception cref="ArgumentException">Thrown if the number of parameter permutations does not match the number of indicators for the strategy.</exception>
+    public IndicatorCollection(StrategyType strategyType, List<byte[]> parameterPermutation) : this(strategyType) // Call the existing constructor to initialize indicators
+    {
+        if (_indicators.Count != parameterPermutation.Count)
+        {
+            throw new ArgumentException($"Parameter permutation count ({parameterPermutation.Count}) does not match indicator count ({_indicators.Count}) for strategy {strategyType}.");
+        }
+
+        for (int i = 0; i < _indicators.Count; i++)
+        {
+            // Use the UpdateFromBinary method implemented in IIndicatorParameter/IndicatorParameterBase
+            _indicators[i].GetParameters().UpdateFromBinary(parameterPermutation[i]);
+        }
+        // Note: Cache invalidation happens automatically in UpdateFromBinary if implemented correctly,
+        // but we invalidate here again just in case and because the collection state changed significantly.
+        InvalidateCache();
     }
 
     public void Add(IIndicator indicator)
@@ -58,17 +83,14 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         InvalidateCache();
     }
 
-    public bool Remove(IIndicator indicator)
-    {
-        var result = _indicators.Remove(indicator);
-        if (result)
-            InvalidateCache();
-        return result;
-    }
-
     public int Count => _indicators.Count;
     public IIndicator this[int index] => _indicators[index];
 
+    /// <summary>
+    /// Calculates the total number of combined parameter permutations across all indicators in the collection.
+    /// This represents the total number of unique states the collection can be in by combining all indicator parameters.
+    /// </summary>
+    /// <returns>The total number of combined parameter permutations (product of individual counts).</returns>
     public int GetTotalParameterPermutations()
     {
         if (_indicators.Count == 0)
@@ -83,12 +105,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
 
         return totalPermutations;
     }
-
-    // Current iteration progress
-    public long CurrentIterationIndex => _currentIterationIndex;
-
-    // Returns the current iteration progress as a percentage (0-100)
-    public double IterationProgress => _currentIterationIndex * 100.0 / Math.Max(1, GetTotalParameterPermutations());
 
     // Reset the iteration to the beginning
     public void ResetIteration()
@@ -115,9 +131,8 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
             var parameter = _indicators[i].GetParameters();
 
             // If this indicator can increment, do it and we're done
-            if (parameter.CanIncrement())
+            if (parameter.IncrementSingle())
             {
-                parameter.IncrementSingle();
                 InvalidateCache();
                 _currentIterationIndex++;
                 return true;
@@ -131,21 +146,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         return false;
     }
 
-    // Check if there are more combinations to iterate
-    public bool HasNext()
-    {
-        if (_indicators.Count == 0)
-            return false;
-
-        // More efficient implementation than using clone
-        for (int i = 0; i < _indicators.Count; i++)
-        {
-            if (_indicators[i].GetParameters().CanIncrement())
-                return true;
-        }
-
-        return false;
-    }
 
     public void UpdateAll(List<BarData> bars)
     {
@@ -200,6 +200,68 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
             indicator.UpdateParameters(randomNeighbor);
         }
         InvalidateCache();
+    }
+
+    /// <summary>
+    /// Generates all possible parameter permutations for each indicator in the collection,
+    /// storing them as binary data.
+    /// </summary>
+    /// <returns>A list where each inner list contains all binary permutations for the indicator at that index.</returns>
+    public List<List<byte[]>> GetAllParameterPermutationsBinary()
+    {
+        var allPermutationsList = new List<List<byte[]>>();
+
+        foreach (var indicator in _indicators)
+        {
+            var parameter = indicator.GetParameters();
+            // reset the parameter to the minimum value - GenerateAllPermutationsBinary already does this
+            // parameter.Reset();
+            if (parameter != null)
+            {
+                allPermutationsList.Add(parameter.GenerateAllPermutationsBinary());
+            }
+            else
+            {
+                // Handle case where an indicator might not have parameters or returns null
+                allPermutationsList.Add([]); // Add an empty list for this indicator
+            }
+        }
+        // Reset the collection state after generating all permutations, as GenerateAllPermutationsBinary modifies clones
+        ResetIteration();
+        return allPermutationsList;
+    }
+
+    /// <summary>
+    /// Computes the Cartesian product of multiple lists of byte arrays.
+    /// Used to generate all combined parameter permutations across indicators.
+    /// </summary>
+    /// <param name="lists">A list of lists, where each inner list contains the permutations for one indicator.</param>
+    /// <returns>A list where each inner list represents one full combined permutation across all indicators.</returns>
+    public static List<List<byte[]>> GenerateCartesianProduct(List<List<byte[]>> lists)
+    {
+        List<List<byte[]>> result = [[]]; // Start with a list containing an empty list
+
+        foreach (var list in lists)
+        {
+            var nextResult = new List<List<byte[]>>();
+            foreach (var existingCombination in result)
+            {
+                foreach (var item in list)
+                {
+                    var newCombination = new List<byte[]>(existingCombination)
+                    {
+                        item
+                    };
+                    nextResult.Add(newCombination);
+                }
+            }
+            result = nextResult;
+
+            // Optimization: If any list is empty, the Cartesian product is empty.
+            if (result.Count == 0) break;
+        }
+
+        return result;
     }
 
     public IEnumerator<IIndicator> GetEnumerator() => _indicators.GetEnumerator();
@@ -267,35 +329,5 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
     public void InvalidateCache()
     {
         _hashCode = null;
-    }
-
-    /// <summary>
-    /// Generates all possible parameter permutation combinations for the current set of indicators
-    /// Returns them as binary-serialized parameter sets to minimize memory usage
-    /// </summary>
-    /// <returns>Dictionary mapping indicator index to its parameter permutations</returns>
-    public Dictionary<int, List<byte[]>> GenerateAllParameterPermutations()
-    {
-        if (_indicators.Count == 0)
-            return new Dictionary<int, List<byte[]>>();
-
-        var result = new Dictionary<int, List<byte[]>>();
-
-        // Generate all permutations for each indicator
-        for (int i = 0; i < _indicators.Count; i++)
-        {
-            var indicator = _indicators[i];
-            var paramType = indicator.GetParameters().GetType();
-
-            // Invoke the static GenerateAllPermutations method via reflection
-            var method = paramType.GetMethod("GenerateAllPermutations", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-            if (method == null)
-                throw new InvalidOperationException($"GenerateAllPermutations method not found for {paramType.Name}");
-
-            var permutations = (List<byte[]>)method.Invoke(null, null)!;
-            result[i] = permutations;
-        }
-
-        return result;
     }
 }

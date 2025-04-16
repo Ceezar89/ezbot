@@ -7,14 +7,14 @@ public class AtrBandsParameter : IndicatorParameterBase
     private double _riskRewardRatio = 1.1;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (5, 40);
-    private static readonly (double Min, double Max) MultiplierRange = (1.0, 3.0);
-    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.0, 2.0);
+    private static readonly (int Min, int Max) PeriodRange = (12, 14);
+    private static readonly (double Min, double Max) MultiplierRange = (2.0, 3.0);
+    private static readonly (double Min, double Max) RiskRewardRatioRange = (1.1, 1.4);
 
     // Steps
-    private const int PeriodRangeStep = 5;
+    private const int PeriodRangeStep = 2;
     private const double MultiplierRangeStep = 0.5;
-    private const double RiskRewardRatioRangeStep = 0.2;
+    private const double RiskRewardRatioRangeStep = 0.1;
 
     // Correctly calculate the number of steps for each parameter range
     private static readonly int PeriodPermutations = CalculateSteps(PeriodRange.Min, PeriodRange.Max, PeriodRangeStep);
@@ -25,22 +25,6 @@ public class AtrBandsParameter : IndicatorParameterBase
 
     // Type identifier for AtrBandsParameter (unique across all parameter types)
     private const byte TYPE_ID = 0x01;
-
-    /// <summary>
-    /// Creates an instance from binary data without using the factory
-    /// </summary>
-    public override AtrBandsParameter FromBinary(byte[] data)
-    {
-        // Extract name
-        int nameLength = BitConverter.ToInt32(data, 1);
-        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
-
-        // Create parameter-specific data array
-        byte[] paramData = new byte[data.Length - (5 + nameLength)];
-        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
-
-        return FromBinary(name, paramData);
-    }
 
     protected override byte GetTypeIdentifier() => TYPE_ID;
 
@@ -58,6 +42,22 @@ public class AtrBandsParameter : IndicatorParameterBase
         BitConverter.GetBytes(_riskRewardRatio).CopyTo(data, 12);
 
         return data;
+    }
+
+    /// <summary>
+    /// Updates the instance fields from the parameter-specific binary data.
+    /// </summary>
+    /// <param name="data">Byte array containing only the specific data for this parameter type.</param>
+    /// <exception cref="ArgumentException">Thrown if data length is incorrect.</exception>
+    protected override void UpdateFromParameterSpecificBinaryData(byte[] data)
+    {
+        if (data.Length != 16) // Ensure the data length matches serialization format
+            throw new ArgumentException("Invalid data length for AtrBandsParameter update", nameof(data));
+
+        // Update fields using properties to leverage validation logic
+        Period = BitConverter.ToInt32(data, 0);
+        Multiplier = BitConverter.ToDouble(data, 4);
+        RiskRewardRatio = BitConverter.ToDouble(data, 12);
     }
 
     // Static method to create AtrBandsParameter from binary data
@@ -83,7 +83,7 @@ public class AtrBandsParameter : IndicatorParameterBase
     private static void RegisterType()
     {
         // Register this type with the factory
-        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => AtrBandsParameter.FromBinary(name, data));
     }
 
     public override int GetPermutationCount() => TotalPermutations;
@@ -147,44 +147,17 @@ public class AtrBandsParameter : IndicatorParameterBase
         RiskRewardRatio = riskRewardRatio;
     }
 
-    public override void IncrementSingle()
+    public override bool IncrementSingle()
     {
-        // Increment parameters one by one, starting from the least significant
-        // When a parameter is successfully incremented, return immediately
-
-        // Start with the least significant parameter
-        if (_riskRewardRatio + RiskRewardRatioRangeStep <= RiskRewardRatioRange.Max + 0.00001) // Add epsilon for float comparison
-        {
-            _riskRewardRatio += RiskRewardRatioRangeStep;
-            return;
-        }
-
-        // Reset and try to increment the next parameter
+        if (IncrementValue(ref _riskRewardRatio, RiskRewardRatioRangeStep, RiskRewardRatioRange))
+            return true;
         _riskRewardRatio = RiskRewardRatioRange.Min;
-        if (_multiplier + MultiplierRangeStep <= MultiplierRange.Max + 0.00001) // Add epsilon for float comparison
-        {
-            _multiplier += MultiplierRangeStep;
-            return;
-        }
 
-        // Reset and try to increment the final parameter
+        if (IncrementValue(ref _multiplier, MultiplierRangeStep, MultiplierRange))
+            return true;
         _multiplier = MultiplierRange.Min;
-        if (_period + PeriodRangeStep <= PeriodRange.Max)
-        {
-            _period += PeriodRangeStep;
-        }
-    }
 
-    public override bool CanIncrement()
-    {
-        // Check if any parameter can still be incremented
-        if (_riskRewardRatio + RiskRewardRatioRangeStep <= RiskRewardRatioRange.Max + 0.00001) // Add epsilon for float comparison
-            return true;
-
-        if (_multiplier + MultiplierRangeStep <= MultiplierRange.Max + 0.00001) // Add epsilon for float comparison
-            return true;
-
-        if (_period + PeriodRangeStep <= PeriodRange.Max)
+        if (IncrementValue(ref _period, PeriodRangeStep, PeriodRange))
             return true;
 
         return false;

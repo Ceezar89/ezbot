@@ -16,12 +16,14 @@ public class BacktestResult
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public int BacktestDurationDays { get; set; }
+    public double RiskPercentage { get; set; }
+    public double FeePercentage { get; set; }
+    public int Leverage { get; set; }
+    public TimeFrame TimeFrame { get; set; }
+    public int LookbackDays { get; set; }
     public int MaxDaysInactive { get; set; }
     public bool TerminatedEarly { get; set; } = false;
     public string TerminationReason { get; set; } = string.Empty;
-
-    // Tracks what percentage of the backtest was completed before termination
-    public double CompletionPercentage { get; set; } = 1.0; // Default to 100% complete
 
     // ADDED: Store Unix timestamps for exact calculations
     public long StartUnixTime { get; set; }

@@ -1,20 +1,21 @@
-﻿using EzBot.Common;
-using EzBot.Core.Optimization;
+﻿using EzBot.Core.Optimization;
 using EzBot.Core.Strategy;
 using EzBot.Models;
 using System.Globalization;
 
-// Configure command-line options
-string? dataFilePath = "../data/btcusd_data.csv";
-StrategyType strategyType = StrategyType.McGinleyTrend;
-TimeFrame timeFrame = TimeFrame.OneHour;
+string dataFilePath = "../data/btcusd_data.csv";
+
+List<StrategyType> strategyTypes = [StrategyType.EtmaTrend, StrategyType.McGinleyTrend];
+List<TimeFrame> timeFrames = [TimeFrame.Minute30, TimeFrame.Minute15];
+List<double> riskPercentages = [1.0, 2.0, 3.0];
+List<int> maxConcurrentTrades = [1, 2, 3];
+
 double initialBalance = 1000;
 double feePercentage = 0.05;
+double maxDrawdown = 0.3;
 int lookbackDays = 1500;
-int maxConcurrentTrades = 1;
-double maxDrawdown = 0.5;
 int leverage = 10;
-int threadCount = -1;
+int threadCount = 0;
 int maxDaysInactive = 3;
 
 // Parse command line arguments
@@ -33,7 +34,7 @@ if (args.Length > 0)
                 break;
             case "--max-concurrent-trades":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedMaxConcurrentTrades))
-                    maxConcurrentTrades = parsedMaxConcurrentTrades;
+                    maxConcurrentTrades = [parsedMaxConcurrentTrades];
                 break;
             case "--max-days-inactive":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedMaxDaysInactive))
@@ -49,16 +50,16 @@ if (args.Length > 0)
                 break;
             case "--strategy":
                 if (i + 1 < args.Length && Enum.TryParse(args[++i], true, out StrategyType parsed))
-                    strategyType = parsed;
+                    strategyTypes = [parsed];
                 break;
             case "--lookback-days":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookbackDays))
                     lookbackDays = parsedLookbackDays;
                 break;
-            case "--timeframe":
-                if (i + 1 < args.Length)
-                    timeFrame = TimeFrameUtility.ParseTimeFrame(args[++i]);
-                break;
+            // case "--timeframe":
+            //     if (i + 1 < args.Length)
+            //         timeFrames = TimeFrameUtility.ParseTimeFrame(args[++i]);
+            //     break;
             case "--balance":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double balance))
                     initialBalance = balance;
@@ -67,26 +68,43 @@ if (args.Length > 0)
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double fee))
                     feePercentage = fee;
                 break;
+                // case "--risk-percentage":
+                //     if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double risk))
+                //         riskPercentage = [risk];
+                //     break;
         }
     }
 }
 
 try
 {
-    var tester = new StrategyTester(
-        dataFilePath,
-        strategyType,
-        timeFrame,
-        initialBalance,
-        feePercentage,
-        maxConcurrentTrades,
-        leverage,
-        lookbackDays,
-        threadCount,
-        maxDrawdown,
-        maxDaysInactive
-    );
-    tester.Test();
+    foreach (var strategyType in strategyTypes)
+    {
+        foreach (var maxConcurrentTrade in maxConcurrentTrades)
+        {
+            foreach (var timeFrame in timeFrames)
+            {
+                foreach (var riskPercentage in riskPercentages)
+                {
+                    var tester = new StrategyTester(
+                        dataFilePath,
+                        strategyType,
+                        timeFrame,
+                        initialBalance,
+                        feePercentage,
+                        maxConcurrentTrade,
+                        leverage,
+                        lookbackDays,
+                        threadCount,
+                        maxDrawdown,
+                        maxDaysInactive,
+                        riskPercentage
+                    );
+                    tester.Test();
+                }
+            }
+        }
+    }
 }
 catch (Exception ex)
 {

@@ -24,13 +24,6 @@ public class TestResult
         Result = tuple.Result;
     }
 
-    // Convert back to tuple
-    public (IndicatorCollection Params, BacktestResult Result) ToTuple()
-    {
-        // Reconstruct the indicator collection from serialized parameters
-        var indicatorCollection = Parameters.ToIndicatorCollection();
-        return (indicatorCollection, Result);
-    }
 }
 
 // Class to hold serializable parameter values
@@ -98,80 +91,6 @@ public class ParameterSet
         {
             Console.WriteLine($"Error creating ParameterSet: {ex.Message}");
         }
-    }
-
-    // Convert back to IndicatorCollection
-    public IndicatorCollection ToIndicatorCollection()
-    {
-        // Create a new IndicatorCollection with StrategyType.PrecisionTrend
-        var result = new IndicatorCollection(StrategyType.PrecisionTrend);
-
-        try
-        {
-            // Match indicators by type name
-            foreach (var indicator in result)
-            {
-                var indicatorType = indicator.GetType().Name;
-
-                // Try to find matching parameters in our dictionary
-                if (Indicators.TryGetValue(indicatorType, out var paramDict))
-                {
-                    var parameters = indicator.GetParameters();
-
-                    foreach (var prop in parameters.GetProperties())
-                    {
-                        if (paramDict.TryGetValue(prop.Name, out var value))
-                        {
-                            // Create a descriptor with the parameter value
-                            // We need to convert the value to the right type
-                            object typedValue = ConvertToRightType(value, prop.Value);
-
-                            var descriptor = new IndicatorParameter.ParameterDescriptor(
-                                typedValue, prop.Min, prop.Max, prop.Step, prop.Name);
-
-                            // Update the parameter
-                            parameters.UpdateFromDescriptor(descriptor);
-                        }
-                    }
-                }
-                // Also try with numbered suffixes
-                else
-                {
-                    int suffix = 1;
-                    string suffixedName = $"{indicatorType}_{suffix}";
-
-                    if (Indicators.TryGetValue(suffixedName, out var suffixedParams))
-                    {
-                        var parameters = indicator.GetParameters();
-
-                        foreach (var param in suffixedParams)
-                        {
-                            // Try to get the original descriptor
-                            var props = parameters.GetProperties();
-                            var originalProp = props.FirstOrDefault(p => p.Name == param.Key);
-
-                            if (originalProp != null)
-                            {
-                                // Create a descriptor
-                                object typedValue = ConvertToRightType(param.Value, originalProp.Value);
-
-                                var descriptor = new IndicatorParameter.ParameterDescriptor(
-                                    typedValue, originalProp.Min, originalProp.Max, originalProp.Step, param.Key);
-
-                                // Update the parameter
-                                parameters.UpdateFromDescriptor(descriptor);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error reconstructing IndicatorCollection: {ex.Message}");
-        }
-
-        return result;
     }
 
     // Helper method to convert serialized values to the right type

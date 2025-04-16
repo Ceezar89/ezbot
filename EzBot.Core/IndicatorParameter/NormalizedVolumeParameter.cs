@@ -12,13 +12,13 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private int _normalHighVolumeRange = 100;
 
     // Ranges
-    private static readonly (int Min, int Max) VolumePeriodRange = (20, 30);
-    private static readonly (int Min, int Max) HighVolumeRange = (90, 110);
+    private static readonly (int Min, int Max) VolumePeriodRange = (10, 30);
+    private static readonly (int Min, int Max) HighVolumeRange = (70, 90);
     private static readonly (int Min, int Max) LowVolumeRange = (70, 90);
     private static readonly (int Min, int Max) NormalHighVolumeRangeRange = (70, 90);
 
     // Steps
-    private const int VolumePeriodRangeStep = 5;
+    private const int VolumePeriodRangeStep = 10;
     private const int HighVolumeRangeStep = 10;
     private const int LowVolumeRangeStep = 10;
     private const int NormalHighVolumeRangeRangeStep = 10;
@@ -33,31 +33,6 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
 
     // Type identifier for NormalizedVolumeParameter (unique across all parameter types)
     private const byte TYPE_ID = 0x06;
-
-    /// <summary>
-    /// Generates all possible parameter permutations as binary data
-    /// </summary>
-    /// <returns>List of binary representations of all permutations</returns>
-    public static List<byte[]> GenerateAllPermutations()
-    {
-        return GenerateAllPermutationsBinary(() => new NormalizedVolumeParameter());
-    }
-
-    /// <summary>
-    /// Creates an instance from binary data without using the factory
-    /// </summary>
-    public override NormalizedVolumeParameter FromBinary(byte[] data)
-    {
-        // Extract name
-        int nameLength = BitConverter.ToInt32(data, 1);
-        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
-
-        // Create parameter-specific data array
-        byte[] paramData = new byte[data.Length - (5 + nameLength)];
-        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
-
-        return FromBinary(name, paramData);
-    }
 
     protected override byte GetTypeIdentifier() => TYPE_ID;
 
@@ -80,6 +55,23 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
         return data;
     }
 
+    /// <summary>
+    /// Updates the instance fields from the parameter-specific binary data.
+    /// </summary>
+    /// <param name="data">Byte array containing only the specific data for this parameter type.</param>
+    /// <exception cref="ArgumentException">Thrown if data length is incorrect.</exception>
+    protected override void UpdateFromParameterSpecificBinaryData(byte[] data)
+    {
+        if (data.Length != 16) // Ensure the data length matches serialization format
+            throw new ArgumentException("Invalid data length for NormalizedVolumeParameter update", nameof(data));
+
+        // Update fields using properties to leverage validation logic
+        VolumePeriod = BitConverter.ToInt32(data, 0);
+        HighVolume = BitConverter.ToInt32(data, 4);
+        LowVolume = BitConverter.ToInt32(data, 8);
+        NormalHighVolumeRange = BitConverter.ToInt32(data, 12);
+    }
+
     // Static method to create NormalizedVolumeParameter from binary data
     public static NormalizedVolumeParameter FromBinary(string name, byte[] data)
     {
@@ -92,7 +84,6 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
         int normalHighVolumeRange = BitConverter.ToInt32(data, 12);
 
         var param = new NormalizedVolumeParameter(volumePeriod, highVolume, lowVolume, normalHighVolumeRange);
-        param.Name = name;
         return param;
     }
 
@@ -106,7 +97,7 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private static void RegisterType()
     {
         // Register this type with the factory
-        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => NormalizedVolumeParameter.FromBinary(name, data));
     }
 
     public override int GetPermutationCount() => TotalPermutations;
@@ -182,55 +173,21 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
         NormalHighVolumeRange = normalHighVolumeRange;
     }
 
-    public override void IncrementSingle()
+    public override bool IncrementSingle()
     {
-        // Increment parameters one by one, starting from the least significant
-        // When a parameter is successfully incremented, return immediately
-
-        // Start with the least significant parameter
-        if (_normalHighVolumeRange + NormalHighVolumeRangeRangeStep <= NormalHighVolumeRangeRange.Max)
-        {
-            _normalHighVolumeRange += NormalHighVolumeRangeRangeStep;
-            return;
-        }
-
-        // Reset and try to increment the next parameter
+        if (IncrementValue(ref _normalHighVolumeRange, NormalHighVolumeRangeRangeStep, NormalHighVolumeRangeRange))
+            return true;
         _normalHighVolumeRange = NormalHighVolumeRangeRange.Min;
-        if (_lowVolume + LowVolumeRangeStep <= LowVolumeRange.Max)
-        {
-            _lowVolume += LowVolumeRangeStep;
-            return;
-        }
 
-        // Reset and try to increment the next parameter
+        if (IncrementValue(ref _lowVolume, LowVolumeRangeStep, LowVolumeRange))
+            return true;
         _lowVolume = LowVolumeRange.Min;
-        if (_highVolume + HighVolumeRangeStep <= HighVolumeRange.Max)
-        {
-            _highVolume += HighVolumeRangeStep;
-            return;
-        }
 
-        // Reset and try to increment the final parameter
+        if (IncrementValue(ref _highVolume, HighVolumeRangeStep, HighVolumeRange))
+            return true;
         _highVolume = HighVolumeRange.Min;
-        if (_volumePeriod + VolumePeriodRangeStep <= VolumePeriodRange.Max)
-        {
-            _volumePeriod += VolumePeriodRangeStep;
-        }
-    }
 
-    public override bool CanIncrement()
-    {
-        // Check if any parameter can still be incremented
-        if (_normalHighVolumeRange + NormalHighVolumeRangeRangeStep <= NormalHighVolumeRangeRange.Max)
-            return true;
-
-        if (_lowVolume + LowVolumeRangeStep <= LowVolumeRange.Max)
-            return true;
-
-        if (_highVolume + HighVolumeRangeStep <= HighVolumeRange.Max)
-            return true;
-
-        if (_volumePeriod + VolumePeriodRangeStep <= VolumePeriodRange.Max)
+        if (IncrementValue(ref _volumePeriod, VolumePeriodRangeStep, VolumePeriodRange))
             return true;
 
         return false;

@@ -2,9 +2,8 @@ namespace EzBot.Core.IndicatorParameter;
 
 public interface IIndicatorParameter : IEquatable<IIndicatorParameter>
 {
-    string Name { get; set; }
-    void IncrementSingle();
-    bool CanIncrement();
+    string Name { get; }
+    bool IncrementSingle();
     List<ParameterDescriptor> GetProperties();
     void UpdateFromDescriptor(ParameterDescriptor descriptor);
     IIndicatorParameter DeepClone();
@@ -12,5 +11,6 @@ public interface IIndicatorParameter : IEquatable<IIndicatorParameter>
     int GetPermutationCount();
     void Reset();
     byte[] ToBinary();
-    IIndicatorParameter FromBinary(byte[] data);
+    void UpdateFromBinary(byte[] data);
+    List<byte[]> GenerateAllPermutationsBinary();
 }

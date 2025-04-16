@@ -25,33 +25,30 @@ public class BacktestAccount
     public long EndUnixTime { get; set; }
 
     // Tracking for position management
+    private BacktestOptions _opt;
     private int nextTradeId = 1;
     private double peakBalance;
     private double totalGainAmount;
     private double totalLossAmount;
     private int winCount;
     private int lossCount;
-    private const double RiskPercentage = 0.01; // 1% risk per trade
+    private readonly double Risk;
 
     // Historical balance tracking
-    private readonly Dictionary<int, double> balanceHistory = new Dictionary<int, double>();
+    private readonly Dictionary<int, double> balanceHistory = [];
 
     // Trade management - use Dictionary for O(1) lookups by ID instead of list searches
     private readonly Dictionary<int, BacktestTrade> trades;
 
-    // Precomputed fee calculations
-    private readonly double feeFactor;
-
-    public BacktestAccount(double initialBalance, double feePercentage, int leverage)
+    public BacktestAccount(BacktestOptions options)
     {
-        InitialBalance = initialBalance;
-        CurrentBalance = initialBalance;
-        peakBalance = initialBalance;
-        FeePercentage = feePercentage;
-        Leverage = leverage;
-
-        // Pre-compute fee multiplier for faster calculations
-        feeFactor = 1.0 - (feePercentage / 100.0);
+        _opt = options;
+        InitialBalance = options.InitialBalance;
+        CurrentBalance = options.InitialBalance;
+        peakBalance = options.InitialBalance;
+        FeePercentage = options.FeePercentage;
+        Leverage = options.Leverage;
+        Risk = options.RiskPercentage / 100;
 
         // Initialize trade tracking with expected capacity
         trades = new Dictionary<int, BacktestTrade>(100); // Typical backtest capacity
@@ -66,7 +63,7 @@ public class BacktestAccount
         balanceHistory[barIndex] = CurrentBalance;
 
         // Calculate position size based on fixed percentage risk management
-        double riskAmount = CurrentBalance * RiskPercentage; // 1% of current balance at risk
+        double riskAmount = CurrentBalance * Risk; // 1% of current balance at risk
         double priceDifference = Math.Abs(price - stopLoss);
 
         // Validate stop loss is set properly
@@ -230,7 +227,6 @@ public class BacktestAccount
                 StartUnixTime = StartUnixTime,
                 EndUnixTime = EndUnixTime,
                 MaxDaysInactive = MaxDaysInactive,
-                CompletionPercentage = 1.0 // Set default completion to 100%
             };
         }
 
@@ -251,7 +247,14 @@ public class BacktestAccount
             StartUnixTime = StartUnixTime,
             EndUnixTime = EndUnixTime,
             MaxDaysInactive = MaxDaysInactive,
-            CompletionPercentage = 1.0 // Set default completion to 100%
+            RiskPercentage = _opt.RiskPercentage,
+            MaxConcurrentTrades = _opt.MaxConcurrentTrades,
+            FeePercentage = _opt.FeePercentage,
+            Leverage = _opt.Leverage,
+            TimeFrame = _opt.TimeFrame,
+            LookbackDays = _opt.LookbackDays,
+            StartDate = DateTime.UnixEpoch.AddSeconds(StartUnixTime),
+            EndDate = DateTime.UnixEpoch.AddSeconds(EndUnixTime),
         };
     }
 
@@ -262,7 +265,7 @@ public class BacktestAccount
     {
         if (trades.TryGetValue(tradeId, out var trade))
         {
-            double targetRiskAmount = InitialBalance * RiskPercentage;
+            double targetRiskAmount = InitialBalance * Risk;
             double actualRiskAmount = trade.RiskAmount;
             double riskRatio = actualRiskAmount / targetRiskAmount;
 

@@ -1,6 +1,4 @@
 using EzBot.Models;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace EzBot.Core.IndicatorParameter;
 
@@ -10,11 +8,11 @@ public class EtmaParameter : IndicatorParameterBase
     private SignalStrength _signalStrength = SignalStrength.VeryStrong;
 
     // Ranges
-    private static readonly (int Min, int Max) LengthRange = (20, 22);
-    private static readonly (int Min, int Max) SignalStrengthRange = (0, 2);
+    private static readonly (int Min, int Max) LengthRange = (5, 50);
+    private static readonly (int Min, int Max) SignalStrengthRange = (0, 1);
 
     // Steps
-    private const int LengthRangeStep = 1;
+    private const int LengthRangeStep = 5;
     private const int SignalStrengthRangeStep = 1;
 
     // Correctly calculate the number of steps for each parameter range
@@ -25,22 +23,6 @@ public class EtmaParameter : IndicatorParameterBase
 
     // Type identifier for EtmaParameter (unique across all parameter types)
     private const byte TYPE_ID = 0x03;
-
-    /// <summary>
-    /// Creates an instance from binary data without using the factory
-    /// </summary>
-    public override EtmaParameter FromBinary(byte[] data)
-    {
-        // Extract name
-        int nameLength = BitConverter.ToInt32(data, 1);
-        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
-
-        // Create parameter-specific data array
-        byte[] paramData = new byte[data.Length - (5 + nameLength)];
-        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
-
-        return FromBinary(name, paramData);
-    }
 
     protected override byte GetTypeIdentifier() => TYPE_ID;
 
@@ -57,6 +39,21 @@ public class EtmaParameter : IndicatorParameterBase
         return data;
     }
 
+    /// <summary>
+    /// Updates the instance fields from the parameter-specific binary data.
+    /// </summary>
+    /// <param name="data">Byte array containing only the specific data for this parameter type.</param>
+    /// <exception cref="ArgumentException">Thrown if data length is incorrect.</exception>
+    protected override void UpdateFromParameterSpecificBinaryData(byte[] data)
+    {
+        if (data.Length != 8) // Ensure the data length matches serialization format
+            throw new ArgumentException("Invalid data length for EtmaParameter update", nameof(data));
+
+        // Update fields using properties to leverage validation logic
+        Length = BitConverter.ToInt32(data, 0);
+        SignalStrength = (SignalStrength)BitConverter.ToInt32(data, 4);
+    }
+
     // Static method to create EtmaParameter from binary data
     public static EtmaParameter FromBinary(string name, byte[] data)
     {
@@ -67,7 +64,6 @@ public class EtmaParameter : IndicatorParameterBase
         SignalStrength signalStrength = (SignalStrength)BitConverter.ToInt32(data, 4);
 
         var param = new EtmaParameter(length, signalStrength);
-        param.Name = name;
         return param;
     }
 
@@ -81,7 +77,7 @@ public class EtmaParameter : IndicatorParameterBase
     private static void RegisterType()
     {
         // Register this type with the factory
-        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => EtmaParameter.FromBinary(name, data));
     }
 
     public override int GetPermutationCount() => TotalPermutations;
@@ -136,26 +132,20 @@ public class EtmaParameter : IndicatorParameterBase
         SignalStrength = signalStrength;
     }
 
-    public override void IncrementSingle()
+    public override bool IncrementSingle()
     {
-        // Increment parameters one by one, starting from the least significant
-        // When a parameter is successfully incremented, return immediately
-
-        // Start with the least significant parameter (Signal Strength)
         int signalStrengthInt = (int)_signalStrength;
-        if (signalStrengthInt + SignalStrengthRangeStep <= SignalStrengthRange.Max)
+        if (IncrementValue(ref signalStrengthInt, SignalStrengthRangeStep, SignalStrengthRange))
         {
-            signalStrengthInt += SignalStrengthRangeStep;
             _signalStrength = (SignalStrength)signalStrengthInt;
-            return;
+            return true;
         }
-
-        // Reset Signal Strength and try to increment Length
         _signalStrength = (SignalStrength)SignalStrengthRange.Min;
-        if (_length + LengthRangeStep <= LengthRange.Max)
-        {
-            _length += LengthRangeStep;
-        }
+
+        if (IncrementValue(ref _length, LengthRangeStep, LengthRange))
+            return true;
+
+        return false;
     }
 
     public override EtmaParameter DeepClone()
@@ -174,19 +164,6 @@ public class EtmaParameter : IndicatorParameterBase
         var signalStrength = (SignalStrength)(SignalStrengthRange.Min + (random.Next(signalStrengthSteps) * SignalStrengthRangeStep));
 
         return new EtmaParameter(length, signalStrength);
-    }
-
-    public override bool CanIncrement()
-    {
-        // Check if any parameter can still be incremented
-        int signalStrengthInt = (int)_signalStrength;
-        if (signalStrengthInt + SignalStrengthRangeStep <= SignalStrengthRange.Max)
-            return true;
-
-        if (_length + LengthRangeStep <= LengthRange.Max)
-            return true;
-
-        return false;
     }
 
     public override void Reset()

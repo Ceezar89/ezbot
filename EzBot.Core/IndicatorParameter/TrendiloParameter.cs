@@ -1,6 +1,3 @@
-using System;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace EzBot.Core.IndicatorParameter;
 
@@ -38,31 +35,6 @@ public class TrendiloParameter : IndicatorParameterBase
     // Type identifier for TrendiloParameter (unique across all parameter types)
     private const byte TYPE_ID = 0x07;
 
-    /// <summary>
-    /// Generates all possible parameter permutations as binary data
-    /// </summary>
-    /// <returns>List of binary representations of all permutations</returns>
-    public static List<byte[]> GenerateAllPermutations()
-    {
-        return GenerateAllPermutationsBinary(() => new TrendiloParameter());
-    }
-
-    /// <summary>
-    /// Creates an instance from binary data without using the factory
-    /// </summary>
-    public override TrendiloParameter FromBinary(byte[] data)
-    {
-        // Extract name
-        int nameLength = BitConverter.ToInt32(data, 1);
-        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
-
-        // Create parameter-specific data array
-        byte[] paramData = new byte[data.Length - (5 + nameLength)];
-        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
-
-        return FromBinary(name, paramData);
-    }
-
     protected override byte GetTypeIdentifier() => TYPE_ID;
 
     protected override byte[] GetParameterSpecificBinaryData()
@@ -85,6 +57,24 @@ public class TrendiloParameter : IndicatorParameterBase
         BitConverter.GetBytes(_bandMultiplier).CopyTo(data, 20);
 
         return data;
+    }
+
+    /// <summary>
+    /// Updates the instance fields from the parameter-specific binary data.
+    /// </summary>
+    /// <param name="data">Byte array containing only the specific data for this parameter type.</param>
+    /// <exception cref="ArgumentException">Thrown if data length is incorrect.</exception>
+    protected override void UpdateFromParameterSpecificBinaryData(byte[] data)
+    {
+        if (data.Length != 24) // Ensure the data length matches serialization format
+            throw new ArgumentException("Invalid data length for TrendiloParameter update", nameof(data));
+
+        // Update fields using properties to leverage validation logic, matching the order in GetParameterSpecificBinaryData
+        Smoothing = BitConverter.ToInt32(data, 0);
+        Lookback = BitConverter.ToInt32(data, 4);
+        AlmaOffset = BitConverter.ToDouble(data, 8);
+        AlmaSigma = BitConverter.ToInt32(data, 16);
+        BandMultiplier = BitConverter.ToDouble(data, 20);
     }
 
     // Static method to create TrendiloParameter from binary data
@@ -112,7 +102,7 @@ public class TrendiloParameter : IndicatorParameterBase
     private static void RegisterType()
     {
         // Register this type with the factory
-        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => TrendiloParameter.FromBinary(name, data));
     }
 
     public override int GetPermutationCount()
@@ -203,66 +193,25 @@ public class TrendiloParameter : IndicatorParameterBase
         BandMultiplier = bandMultiplier;
     }
 
-    public override void IncrementSingle()
+    public override bool IncrementSingle()
     {
-        // Increment parameters one by one, starting from the least significant
-        // When a parameter is successfully incremented, return immediately
-
-        // Start with the least significant parameter (Band Multiplier)
-        if (_bandMultiplier + BandMultiplierRangeStep <= BandMultiplierRange.Max + 0.00001) // Add epsilon for float comparison
-        {
-            _bandMultiplier += BandMultiplierRangeStep;
-            return;
-        }
-
-        // Reset Band Multiplier and try to increment Alma Sigma
+        if (IncrementValue(ref _bandMultiplier, BandMultiplierRangeStep, BandMultiplierRange))
+            return true;
         _bandMultiplier = BandMultiplierRange.Min;
-        if (_almaSigma + AlmaSigmaRangeStep <= AlmaSigmaRange.Max)
-        {
-            _almaSigma += AlmaSigmaRangeStep;
-            return;
-        }
 
-        // Reset Alma Sigma and try to increment Alma Offset
+        if (IncrementValue(ref _almaSigma, AlmaSigmaRangeStep, AlmaSigmaRange))
+            return true;
         _almaSigma = AlmaSigmaRange.Min;
-        if (_almaOffset + AlmaOffsetRangeStep <= AlmaOffsetRange.Max + 0.00001) // Add epsilon for float comparison
-        {
-            _almaOffset += AlmaOffsetRangeStep;
-            return;
-        }
 
-        // Reset Alma Offset and try to increment Lookback
+        if (IncrementValue(ref _almaOffset, AlmaOffsetRangeStep, AlmaOffsetRange))
+            return true;
         _almaOffset = AlmaOffsetRange.Min;
-        if (_lookback + LookbackRangeStep <= LookbackRange.Max)
-        {
-            _lookback += LookbackRangeStep;
-            return;
-        }
 
-        // Reset Lookback and try to increment Smoothing
+        if (IncrementValue(ref _lookback, LookbackRangeStep, LookbackRange))
+            return true;
         _lookback = LookbackRange.Min;
-        if (_smoothing + SmoothingRangeStep <= SmoothingRange.Max)
-        {
-            _smoothing += SmoothingRangeStep;
-        }
-    }
 
-    public override bool CanIncrement()
-    {
-        // Check if any parameter can still be incremented
-        if (_bandMultiplier + BandMultiplierRangeStep <= BandMultiplierRange.Max + 0.00001) // Add epsilon for float comparison
-            return true;
-
-        if (_almaSigma + AlmaSigmaRangeStep <= AlmaSigmaRange.Max)
-            return true;
-
-        if (_almaOffset + AlmaOffsetRangeStep <= AlmaOffsetRange.Max + 0.00001) // Add epsilon for float comparison
-            return true;
-
-        if (_lookback + LookbackRangeStep <= LookbackRange.Max)
-            return true;
-
-        if (_smoothing + SmoothingRangeStep <= SmoothingRange.Max)
+        if (IncrementValue(ref _smoothing, SmoothingRangeStep, SmoothingRange))
             return true;
 
         return false;

@@ -22,11 +22,14 @@ public class StrategyTester
     private readonly int threadCount;
 
     // State tracking with improved concurrency
-    private readonly ConcurrentBag<(IndicatorCollection Params, BacktestResult Result)> results = [];
+    // Use dictionary to track results with unique parameter configurations
+    private readonly ConcurrentDictionary<string, (IndicatorCollection Params, BacktestResult Result)> Results = new();
+    // Shared parameter cache to prevent duplicate backtesting across threads
+    private readonly ConcurrentDictionary<string, bool> processedParameters = new();
     private readonly Stopwatch totalStopwatch = new();
     private long currentCombinationIndex = 0;
     private int terminatedEarlyCount = 0;
-    // Timestamp for periodic saving
+    private int duplicateCount = 0;
     private DateTime lastSaveTime = DateTime.Now;
     private readonly TimeSpan saveInterval = TimeSpan.FromSeconds(60);
 
@@ -54,7 +57,8 @@ public class StrategyTester
         int lookbackDays = 1500,
         int threadCount = -1,
         double maxDrawdown = 0.5,
-        int maxDaysInactive = 14
+        int maxDaysInactive = 14,
+        double riskPercentage = 1.0
     )
     {
         this.strategyType = strategyType;
@@ -77,7 +81,8 @@ public class StrategyTester
             lookbackDays,
             maxDrawdown,
             maxConcurrentTrades,
-            maxDaysInactive
+            maxDaysInactive,
+            riskPercentage
         );
 
         // Load and prepare historical data - do this once upfront
@@ -157,6 +162,34 @@ public class StrategyTester
     }
 
     /// <summary>
+    /// Generates a unique key for parameter configuration to ensure uniqueness in results
+    /// </summary>
+    private string GenerateParameterKey(IndicatorCollection parameters)
+    {
+        // Create a string representation of parameter values
+        var key = new System.Text.StringBuilder();
+
+        foreach (var indicator in parameters)
+        {
+            var indParams = indicator.GetParameters();
+            var props = indParams.GetProperties();
+
+            // Add indicator type to key
+            key.Append(indicator.GetType().Name).Append(':');
+
+            // Add each parameter value to key
+            foreach (var prop in props)
+            {
+                key.Append(prop.Name).Append('=').Append(prop.Value).Append(',');
+            }
+
+            key.Append(';');
+        }
+
+        return key.ToString();
+    }
+
+    /// <summary>
     /// Loads and prepares the historical data - extracted to a method to improve readability
     /// </summary>
     private static List<BarData> LoadAndPrepareData(string dataFilePath, int lookbackDays, TimeFrame timeFrame)
@@ -197,7 +230,9 @@ public class StrategyTester
         Console.WriteLine($"- Initial Balance: ${backtestOptions.InitialBalance:F2}");
         Console.WriteLine($"- Fee Percentage: {backtestOptions.FeePercentage:F2}%");
         Console.WriteLine($"- Leverage: {backtestOptions.Leverage}x");
+        Console.WriteLine($"- Risk Percentage: {backtestOptions.RiskPercentage:F2}%");
         Console.WriteLine($"- Total Combinations: {totalCombinations:N0}");
+        Console.WriteLine($"- Batch Size: {BatchSize} strategies per backtest");
 
         // Start UI thread for progress display
         var uiThread = new Thread(UpdateProgressDisplay)
@@ -237,7 +272,7 @@ public class StrategyTester
     }
 
     /// <summary>
-    /// Worker thread that processes parameter combinations in batches for better cache locality
+    /// Worker thread that processes parameter combinations in batches for better performance
     /// </summary>
     private void ProcessParameters()
     {
@@ -272,33 +307,109 @@ public class StrategyTester
                     }
                 }
 
-                // Process each combination in the batch
+                // Create a batch of strategies to test simultaneously
+                var strategies = new List<ITradingStrategy>(actualBatchSize);
+                var parameterInstances = new List<IndicatorCollection>(actualBatchSize);
+                var parameterKeys = new List<string>(actualBatchSize);
+
+                // Process each parameter combination and check for duplicates first
+                int effectiveBatchSize = 0;
                 for (int i = 0; i < actualBatchSize; i++)
                 {
                     try
                     {
-                        // Create strategy with these parameters
-                        var strategy = StrategyFactory.CreateStrategy(strategyType, parameters.DeepClone());
+                        // Clone the current parameter set
+                        var paramClone = parameters.DeepClone();
 
-                        // Run backtest with the current parameters
-                        var backtestResult = Backtest.Run(strategy, historicalData, backtestOptions);
+                        // Check if we've already processed this parameter configuration
+                        string paramKey = GenerateParameterKey(paramClone);
 
-                        if (!backtestResult.TerminatedEarly && backtestResult.NetProfit > 0)
+                        // If this parameter set hasn't been processed yet, mark it and add to batch
+                        if (processedParameters.TryAdd(paramKey, true))
                         {
-                            // Add successful result to collection
-                            results.Add((parameters.DeepClone(), backtestResult));
+                            try
+                            {
+                                // Create strategy with this parameter set
+                                var strategy = StrategyFactory.CreateStrategy(strategyType, paramClone);
+
+                                // Add to batch for processing
+                                strategies.Add(strategy);
+                                parameterInstances.Add(paramClone);
+                                parameterKeys.Add(paramKey);
+                                effectiveBatchSize++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Exception creating strategy: {ex.Message}");
+                                // Remove from processed parameters since we couldn't create it
+                                processedParameters.TryRemove(paramKey, out _);
+                            }
+                        }
+
+                        // Move to the next parameter combination if not done with batch
+                        if (i < actualBatchSize - 1 && !parameters.Next())
+                        {
+                            // We've reached the end of all combinations
+                            break;
                         }
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Exception during backtest: {ex.Message}");
-                    }
+                        Debug.WriteLine($"Exception generating parameters: {ex.Message}");
 
-                    // Move to the next parameter combination if not done with batch
-                    if (i < actualBatchSize - 1 && !parameters.Next())
+                        // Move to next parameter set even if this one failed
+                        if (i < actualBatchSize - 1)
+                            parameters.Next();
+                    }
+                }
+
+                // Run backtest for all strategies in the batch at once if we have any
+                if (strategies.Count > 0)
+                {
+                    try
                     {
-                        // We've reached the end of all combinations
-                        break;
+                        var backtestResults = Backtest.Run(strategies, historicalData, backtestOptions);
+
+                        // Process results from all strategies
+                        for (int i = 0; i < backtestResults.Count; i++)
+                        {
+                            var result = backtestResults[i];
+                            var paramKey = parameterKeys[i];
+
+                            // Track terminated strategies
+                            if (result.TerminatedEarly)
+                            {
+                                Interlocked.Increment(ref terminatedEarlyCount);
+
+                                // Record termination reason
+                                if (!string.IsNullOrEmpty(result.TerminationReason))
+                                {
+                                    terminationReasons.AddOrUpdate(
+                                        result.TerminationReason,
+                                        1,
+                                        (_, count) => count + 1
+                                    );
+                                }
+                            }
+                            // Add successful strategies to results
+                            else if (result.NetProfit > 0 && result.WinRate > 0.5)
+                            {
+                                if (!Results.TryAdd(paramKey, (parameterInstances[i], result)))
+                                {
+                                    // It's a duplicate - check if the new result is better
+                                    if (result.NetProfit > Results[paramKey].Result.NetProfit)
+                                    {
+                                        // Replace with better result
+                                        Results[paramKey] = (parameterInstances[i], result);
+                                    }
+                                    Interlocked.Increment(ref duplicateCount);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Exception during batch backtest: {ex.Message}");
                     }
                 }
             }
@@ -310,14 +421,155 @@ public class StrategyTester
     }
 
     /// <summary>
+    /// Trims the results collection to keep only the top 10 items by net profit
+    /// </summary>
+    private void TrimResultsToTop10()
+    {
+        // Skip trimming if we have fewer than 10 results
+        if (Results.Count <= 10)
+            return;
+
+        // Extract all values, sort, and keep top 10
+        var resultArray = Results.Values.ToArray();
+
+        // Group by performance metrics to eliminate duplicates with identical results
+        var groupedResults = resultArray
+            .GroupBy(r => new
+            {
+                NetProfit = Math.Round(r.Result.NetProfit, 2),
+                WinRate = Math.Round(r.Result.WinRate, 4),
+                TotalTrades = r.Result.TotalTrades
+            })
+            .Select(g => g.First()) // Take only the first result from each group
+            .OrderByDescending(r => r.Result.NetProfit)
+            .Take(10)
+            .ToArray();
+
+        // Create new dictionary with just the deduplicated top 10
+        var newResults = new ConcurrentDictionary<string, (IndicatorCollection Params, BacktestResult Result)>();
+
+        foreach (var result in groupedResults)
+        {
+            var key = GenerateParameterKey(result.Params);
+            newResults.TryAdd(key, result);
+        }
+
+        // Replace the old dictionary with the new one
+        Results.Clear();
+        foreach (var kvp in newResults)
+        {
+            Results.TryAdd(kvp.Key, kvp.Value);
+        }
+    }
+
+    /// <summary>
+    /// Generates a filename for saving results based on strategy, timeframe, risk, and concurrent trades
+    /// </summary>
+    private string GenerateResultFilename()
+    {
+        // Format: StrategyType_LookbackDays_TimeFrame_RiskPercentage_MaxConcurrentTrades.json
+        string fileName = $"{strategyType}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}_{backtestOptions.RiskPercentage}R_{backtestOptions.MaxConcurrentTrades}C.json";
+        return fileName;
+    }
+
+    /// <summary>
+    /// Saves top 10 results to a JSON file
+    /// </summary>
+    private void SaveTopResults()
+    {
+        try
+        {
+            // Get values, sort, and take top
+            var resultArray = Results.Values.ToArray();
+
+            // Deduplicate results based on performance metrics
+            var currentResults = resultArray
+                .GroupBy(r => new
+                {
+                    NetProfit = Math.Round(r.Result.NetProfit, 2),
+                    WinRate = Math.Round(r.Result.WinRate, 4),
+                    TotalTrades = r.Result.TotalTrades
+                })
+                .Select(g => g.First()) // Take only the first result from each group
+                .OrderByDescending(r => r.Result.NetProfit)
+                .ToList();
+
+            if (currentResults.Count == 0)
+                return;
+
+            // Create a list of test results from current results
+            var testResults = currentResults.Select(r => new TestResult(r)).ToList();
+
+            // Generate filename with strategy, lookback days, timeframe, risk, and concurrent trades
+            string fileName = GenerateResultFilename();
+
+            // Check if file exists and merge results
+            if (File.Exists(fileName))
+            {
+                try
+                {
+                    // Load existing file
+                    string existingJson = File.ReadAllText(fileName);
+                    var jsonOptions = new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    };
+
+                    var existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, jsonOptions);
+
+                    // If we have existing results, merge them with the current results
+                    if (existingResults != null && existingResults.Count > 0)
+                    {
+                        // Combine existing and new results
+                        testResults.AddRange(existingResults);
+
+                        // Deduplicate the combined results based on performance metrics
+                        testResults = testResults
+                            .GroupBy(r => new
+                            {
+                                NetProfit = Math.Round(r.Result.NetProfit, 2),
+                                WinRate = Math.Round(r.Result.WinRatePercent, 2),
+                                TotalTrades = r.Result.TotalTrades
+                            })
+                            .Select(g => g.First())
+                            .OrderByDescending(r => r.Result.NetProfit)
+                            .Take(10)
+                            .ToList();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // If there's an error reading the file, log it and continue with current results
+                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will create new file with current results.");
+                }
+            }
+
+            // Ensure we only save the top 10
+            if (testResults.Count > 10)
+                testResults = testResults.Take(10).ToList();
+
+            // Always save the results - we've merged with existing if necessary
+            var serializeOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+
+            string json = JsonSerializer.Serialize(testResults, serializeOptions);
+            File.WriteAllText(fileName, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\nError saving top results: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Updates the progress display at fixed intervals
     /// </summary>
     private void UpdateProgressDisplay()
     {
         int progressBarWidth = 50;
-        DateTime lastUpdate = DateTime.Now;
-        long lastCount = 0;
-        double combinationsPerSecond = 0;
 
         // Cache for string building to reduce allocations
         char[] progressBar = new char[progressBarWidth + 2]; // +2 for brackets
@@ -327,26 +579,14 @@ public class StrategyTester
         while (!stopRequested.IsSet)
         {
             long current = Interlocked.Read(ref currentCombinationIndex);
-            int resultsCount = results.Count;
-            int terminatedCount = terminatedEarlyCount;
-
-            // Calculate combinations per second
-            var elapsed = DateTime.Now - lastUpdate;
-            if (elapsed.TotalSeconds >= 1)
-            {
-                combinationsPerSecond = (current - lastCount) / elapsed.TotalSeconds;
-                lastCount = current;
-                lastUpdate = DateTime.Now;
-            }
 
             // Check if it's time to trim results and save
             var timeSinceLastSave = DateTime.Now - lastSaveTime;
-            if (timeSinceLastSave >= saveInterval && !results.IsEmpty)
+            if (timeSinceLastSave >= saveInterval && Results.Count > 0)
             {
-                TrimResultsToTop100();
-                SaveTopResults(100);
+                TrimResultsToTop10();
+                SaveTopResults();
                 lastSaveTime = DateTime.Now;
-                Console.WriteLine($"\nSaved top 100 results at {DateTime.Now.ToShortTimeString()}");
             }
 
             // Calculate completion percentage
@@ -359,9 +599,7 @@ public class StrategyTester
                 progressBar[i + 1] = i < filledWidth ? '◼' : ' ';
             }
 
-            // Format status line with string interpolation (more efficient than multiple concatenations)
-            string statusLine = $"\r{new string(progressBar)} {percentage}% ( {current:N0} / {totalCombinations:N0} ) " +
-                               $"[{combinationsPerSecond:N0}/s] Found: {resultsCount:N0}  ";
+            string statusLine = $"\r{new string(progressBar)} {percentage}% ({current:N0}/{totalCombinations:N0}) " + $"Found: {Results.Count:N0}  ";
 
             // Write to console without a newline
             Console.Write(statusLine);
@@ -374,47 +612,19 @@ public class StrategyTester
     }
 
     /// <summary>
-    /// Trims the results collection to keep only the top 100 items by net profit
+    /// Save the best result to a file
     /// </summary>
-    private void TrimResultsToTop100()
-    {
-        // Skip trimming if we have fewer than 100 results
-        if (results.Count <= 100)
-            return;
-
-        // Extract all results, sort, and keep top 100
-        var resultArray = results.ToArray();
-        var top100 = resultArray.OrderByDescending(r => r.Result.NetProfit).Take(100).ToArray();
-
-        // Clear the bag and add back only the top 100
-        results.Clear();
-        foreach (var result in top100)
-        {
-            results.Add(result);
-        }
-    }
-
-    /// <summary>
-    /// Saves top N results to a JSON file
-    /// </summary>
-    private void SaveTopResults(int count)
+    private void SaveBestResult((IndicatorCollection Params, BacktestResult Result) bestResult)
     {
         try
         {
-            // Use ToArray for better performance on ConcurrentBag
-            var resultArray = results.ToArray();
-            var topResults = resultArray.OrderByDescending(r => r.Result.NetProfit).Take(count).ToList();
+            // Create a JSON-friendly result
+            var testResult = new TestResult(bestResult);
 
-            if (topResults.Count == 0)
-                return;
+            // Generate filename with strategy, lookback days, timeframe, risk, and concurrent trades
+            string fileName = GenerateResultFilename();
 
-            // Create a list of test results
-            var testResults = topResults.Select(r => new TestResult(r)).ToList();
-
-            // Create standardized filename with strategy, lookback days, and timeframe
-            string fileName = $"{strategyType}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}.json";
-
-            // Check if file exists and compare with new results
+            // Check if file exists and compare with new result
             bool shouldSave = true;
             if (File.Exists(fileName))
             {
@@ -422,38 +632,81 @@ public class StrategyTester
                 {
                     // Load existing file
                     string existingJson = File.ReadAllText(fileName);
-                    var options = new JsonSerializerOptions
+                    var deserializeOptions = new JsonSerializerOptions
                     {
                         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                     };
 
-                    var existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, options);
+                    // Try to parse as list first (since we're now always saving as a list)
+                    List<TestResult>? existingResults = null;
 
-                    // Compare best result from existing file with current best result
-                    if (existingResults != null && existingResults.Count > 0)
+                    try
                     {
-                        double existingBestProfit = existingResults.Max(r => r.Result.NetProfit);
-                        double newBestProfit = topResults[0].Result.NetProfit;
+                        existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, deserializeOptions);
 
-                        // Only save if the new result is better
-                        shouldSave = newBestProfit > existingBestProfit;
-
-                        if (!shouldSave)
+                        // If parsed as list, compare with best result
+                        if (existingResults != null && existingResults.Count > 0)
                         {
-                            Console.WriteLine($"\nExisting results in {fileName} have higher profit (${existingBestProfit:F2} vs ${newBestProfit:F2}). File not updated.");
+                            double existingBestProfit = existingResults.Max(r => r.Result.NetProfit);
+                            double newProfit = bestResult.Result.NetProfit;
+
+                            // Check if new result would make it into the top 10
+                            if (existingResults.Count < 10 || newProfit > existingResults.Min(r => r.Result.NetProfit))
+                            {
+                                // Add the new result and keep only top 10
+                                existingResults.Add(testResult);
+
+                                // Deduplicate and sort
+                                existingResults = existingResults
+                                    .GroupBy(r => new
+                                    {
+                                        NetProfit = Math.Round(r.Result.NetProfit, 2),
+                                        WinRate = Math.Round(r.Result.WinRatePercent, 2),
+                                        TotalTrades = r.Result.TotalTrades
+                                    })
+                                    .Select(g => g.First())
+                                    .OrderByDescending(r => r.Result.NetProfit)
+                                    .Take(10)
+                                    .ToList();
+
+                                // Save the updated list
+                                var saveOptions = new JsonSerializerOptions
+                                {
+                                    WriteIndented = true,
+                                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                                };
+
+                                string json = JsonSerializer.Serialize(existingResults, saveOptions);
+                                File.WriteAllText(fileName, json);
+
+                                // We've already saved, so don't save again
+                                shouldSave = false;
+                            }
+                            else
+                            {
+                                shouldSave = false;
+                            }
                         }
+                    }
+                    catch
+                    {
+                        // If parsing as list fails, continue with shouldSave = true
+                        Console.WriteLine("\nExisting file format is not compatible. Will create new file.");
                     }
                 }
                 catch (Exception ex)
                 {
                     // If there's an error reading the file, proceed with saving
-                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will overwrite with new results.");
+                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will overwrite with new result.");
                     shouldSave = true;
                 }
             }
 
             if (shouldSave)
             {
+                // Create a list with the single result
+                var resultsList = new List<TestResult> { testResult };
+
                 // Serialize with indentation for readability
                 var options = new JsonSerializerOptions
                 {
@@ -461,15 +714,15 @@ public class StrategyTester
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                 };
 
-                string json = JsonSerializer.Serialize(testResults, options);
+                string json = JsonSerializer.Serialize(resultsList, options);
                 File.WriteAllText(fileName, json);
 
-                Console.WriteLine($"\nSaved top {count} results to {fileName}");
+                Console.WriteLine($"\nSaved best result to {fileName}");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"\nError saving top results: {ex.Message}");
+            Console.WriteLine($"\nError saving best result: {ex.Message}");
         }
     }
 
@@ -481,8 +734,9 @@ public class StrategyTester
         Console.WriteLine("\nOptimization Complete!");
         Console.WriteLine("=====================");
         Console.WriteLine($"Tested: {currentCombinationIndex:N0} combinations");
-        Console.WriteLine($"Successful: {results.Count:N0} strategies");
         Console.WriteLine($"Terminated: {terminatedEarlyCount:N0} strategies");
+        Console.WriteLine($"Successful: {Results.Count:N0} unique strategies");
+        Console.WriteLine($"Duplicate successes: {duplicateCount:N0} strategies");
         Console.WriteLine($"Total time: {totalStopwatch.Elapsed}");
 
         // Display termination reasons if there are any
@@ -496,15 +750,24 @@ public class StrategyTester
             }
         }
 
-        if (results.IsEmpty)
+        if (Results.Count == 0)
         {
             Console.WriteLine("\nNo successful optimization results found.");
             return;
         }
 
-        // Use ToArray for better performance on ConcurrentBag
-        var resultArray = results.ToArray();
-        var topResults = resultArray.OrderByDescending(r => r.Result.NetProfit).Take(10).ToList();
+        // Deduplicate by performance metrics before displaying results
+        var topResults = Results.Values
+            .GroupBy(r => new
+            {
+                NetProfit = Math.Round(r.Result.NetProfit, 2),
+                WinRate = Math.Round(r.Result.WinRate, 4),
+                TotalTrades = r.Result.TotalTrades
+            })
+            .Select(g => g.First())
+            .OrderByDescending(r => r.Result.NetProfit)
+            .Take(10)
+            .ToList();
 
         Console.WriteLine("\nTop 10 Results:");
         Console.WriteLine("===============");
@@ -517,101 +780,15 @@ public class StrategyTester
                              $"Trades: {result.Result.TotalTrades}");
         }
 
-        // Save the top result to a file
+        // Save the top results to a file
         if (topResults.Count > 0)
         {
+            // First save just the best result
             var bestResult = topResults[0];
             SaveBestResult(bestResult);
-        }
-    }
 
-    /// <summary>
-    /// Save the best result to a file
-    /// </summary>
-    private void SaveBestResult((IndicatorCollection Params, BacktestResult Result) bestResult)
-    {
-        try
-        {
-            // Create a JSON-friendly result
-            var testResult = new TestResult(bestResult);
-
-            // Create standardized filename with strategy, lookback days, and timeframe
-            string fileName = $"{strategyType}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}.json";
-
-            // Check if file exists and compare with new result
-            bool shouldSave = true;
-            if (File.Exists(fileName))
-            {
-                try
-                {
-                    // Load existing file
-                    string existingJson = File.ReadAllText(fileName);
-                    var options = new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                    };
-
-                    // The file might contain a single result or an array of results
-                    // Try to deserialize as a single TestResult first
-                    TestResult? existingResult = null;
-                    List<TestResult>? existingResults = null;
-
-                    try
-                    {
-                        existingResult = JsonSerializer.Deserialize<TestResult>(existingJson, options);
-                    }
-                    catch
-                    {
-                        // If it fails, try as a list
-                        existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, options);
-                    }
-
-                    // Get existing profit for comparison
-                    double existingBestProfit = 0;
-                    if (existingResult != null)
-                    {
-                        existingBestProfit = existingResult.Result.NetProfit;
-                    }
-                    else if (existingResults != null && existingResults.Count > 0)
-                    {
-                        existingBestProfit = existingResults.Max(r => r.Result.NetProfit);
-                    }
-
-                    // Only save if the new result is better
-                    double newProfit = bestResult.Result.NetProfit;
-                    shouldSave = newProfit > existingBestProfit;
-
-                    if (!shouldSave)
-                    {
-                        Console.WriteLine($"\nExisting result in {fileName} has higher profit (${existingBestProfit:F2} vs ${newProfit:F2}). File not updated.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // If there's an error reading the file, proceed with saving
-                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will overwrite with new result.");
-                    shouldSave = true;
-                }
-            }
-
-            if (shouldSave)
-            {
-                // Serialize with indentation for readability
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
-
-                string json = JsonSerializer.Serialize(testResult, options);
-                File.WriteAllText(fileName, json);
-
-                Console.WriteLine($"\nSaved best result to {fileName}");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"\nError saving best result: {ex.Message}");
+            // Then save all top 10 results
+            SaveTopResults();
         }
     }
 }

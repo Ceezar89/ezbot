@@ -25,7 +25,7 @@ public class SupertrendParameter : IndicatorParameterBase
     public static readonly int TotalPermutations = AtrPeriodPermutations * FactorPermutations;
 
     // Type identifier for SupertrendParameter (unique across all parameter types)
-    private const byte TYPE_ID = 0x07; // Use a unique ID that doesn't conflict with other parameters
+    private const byte TYPE_ID = 0x08; // Use a unique ID that doesn't conflict with other parameters
 
     [Required]
     [Range(5, 20)]
@@ -83,6 +83,21 @@ public class SupertrendParameter : IndicatorParameterBase
         return data;
     }
 
+    /// <summary>
+    /// Updates the instance fields from the parameter-specific binary data.
+    /// </summary>
+    /// <param name="data">Byte array containing only the specific data for this parameter type.</param>
+    /// <exception cref="ArgumentException">Thrown if data length is incorrect.</exception>
+    protected override void UpdateFromParameterSpecificBinaryData(byte[] data)
+    {
+        if (data.Length != 12) // Ensure the data length matches serialization format
+            throw new ArgumentException("Invalid data length for SupertrendParameter update", nameof(data));
+
+        // Update fields using properties to leverage validation logic
+        AtrPeriod = BitConverter.ToInt32(data, 0);
+        Factor = BitConverter.ToDouble(data, 4);
+    }
+
     // Static method to create SupertrendParameter from binary data
     public static SupertrendParameter FromBinary(string name, byte[] data)
     {
@@ -93,7 +108,6 @@ public class SupertrendParameter : IndicatorParameterBase
         double factor = BitConverter.ToDouble(data, 4);
 
         var param = new SupertrendParameter(atrPeriod, factor);
-        param.Name = name;
         return param;
     }
 
@@ -107,7 +121,7 @@ public class SupertrendParameter : IndicatorParameterBase
     private static void RegisterType()
     {
         // Register this type with the factory
-        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => FromBinary(name, data));
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => SupertrendParameter.FromBinary(name, data));
     }
 
     public override int GetPermutationCount() => TotalPermutations;
@@ -133,30 +147,13 @@ public class SupertrendParameter : IndicatorParameterBase
         }
     }
 
-    public override void IncrementSingle()
+    public override bool IncrementSingle()
     {
-        // Increment parameters one by one, starting from the least significant
-        // When a parameter is successfully incremented, return immediately
-
-        // Start with the least significant parameter (Factor)
         if (IncrementValue(ref _factor, FactorRangeStep, FactorRange))
-            return;
-
-        // Reset Factor and try to increment AtrPeriod
-        _factor = FactorRange.Min;
-        if (_atrPeriod + AtrPeriodRangeStep <= AtrPeriodRange.Max)
-        {
-            _atrPeriod += AtrPeriodRangeStep;
-        }
-    }
-
-    public override bool CanIncrement()
-    {
-        // Check if any parameter can still be incremented
-        if (_factor + FactorRangeStep <= FactorRange.Max)
             return true;
+        _factor = FactorRange.Min;
 
-        if (_atrPeriod + AtrPeriodRangeStep <= AtrPeriodRange.Max)
+        if (IncrementValue(ref _atrPeriod, AtrPeriodRangeStep, AtrPeriodRange))
             return true;
 
         return false;

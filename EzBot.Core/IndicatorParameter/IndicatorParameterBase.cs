@@ -6,19 +6,18 @@ using System.Collections.Generic;
 public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
 {
     // Factory dictionary to store type creation functions
-    private static readonly Dictionary<byte, Func<string, byte[], IIndicatorParameter>> _typeRegistry = new();
+    private static readonly Dictionary<byte, Func<string, byte[], IIndicatorParameter>> _typeRegistry = [];
+    public string Name { get; } = name;
 
     // Register a parameter type with the factory
-    public static void RegisterParameterType(byte typeId, Func<string, byte[], IIndicatorParameter> creator)
+    public static void RegisterParameterType(byte typeId, Func<string, byte[], IIndicatorParameter> constructor)
     {
         if (_typeRegistry.ContainsKey(typeId))
         {
             throw new ArgumentException($"Type ID {typeId} is already registered");
         }
-        _typeRegistry[typeId] = creator;
+        _typeRegistry[typeId] = constructor;
     }
-
-    public string Name { get; set; } = name;
 
     protected static void ValidateAndSetValue<T>(ref T field, T value, (T Min, T Max) range) where T : IComparable<T>
     {
@@ -44,8 +43,10 @@ public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
         {
             double newValue = doubleField + doubleStep;
             // Use epsilon comparison for double to avoid floating point issues
-            if (newValue <= ((double)(object)range.Max) + 1e-10)
+            if (newValue <= ((double)(object)range.Max))
             {
+                // Round to one decimal place to avoid floating point precision issues
+                newValue = Math.Round(newValue, 1);
                 field = (T)(object)newValue;
                 return true;
             }
@@ -53,8 +54,9 @@ public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
         return false;
     }
 
-    // Utility method to calculate the number of steps in a range
-    protected static int CalculateSteps<T>(T min, T max, T step) where T : IComparable
+    // Utility method to calculate the number of steps in a range 
+    // to find the theoretical maximum number of permutations
+    protected static int CalculateSteps<T>(T min, T max, T step) where T : IComparable<T>
     {
         if (min is int intMin && max is int intMax && step is int intStep)
         {
@@ -66,14 +68,6 @@ public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
             return (int)Math.Round((doubleMax - doubleMin) / doubleStep) + 1;
         }
         throw new ArgumentException("Unsupported type for step calculation");
-    }
-
-    public bool Equals(IIndicatorParameter? other)
-    {
-        if (other == null || GetType() != other.GetType())
-            return false;
-
-        return Name == other.Name;
     }
 
     // Base implementation of binary serialization
@@ -99,100 +93,157 @@ public abstract class IndicatorParameterBase(string name) : IIndicatorParameter
         return result;
     }
 
+    /// <summary>
+    /// Deserializes a byte array back into an IIndicatorParameter instance.
+    /// Assumes the byte array was created using ToBinary().
+    /// </summary>
+    /// <param name="data">The byte array containing the serialized parameter.</param>
+    /// <returns>An IIndicatorParameter instance.</returns>
+    /// <exception cref="ArgumentException">Thrown if the type identifier is unknown or data is malformed.</exception>
+    public static IIndicatorParameter FromBinaryStatic(byte[] data)
+    {
+        // Header structure: [TypeID (1 byte)][Name Length (4 bytes)][Name (variable bytes)][Parameter Data (variable bytes)]
+        const int HeaderOffsetName = 1 + 4; // Offset after TypeID (1) and Name Length (4)
+
+        if (data == null || data.Length < HeaderOffsetName) // Basic validation
+        {
+            throw new ArgumentException("Input byte array is null or too short to contain header.");
+        }
+
+        // Get type identifier (first byte)
+        byte typeId = data[0];
+
+        // Extract name length (4 bytes starting at index 1)
+        int nameLength = BitConverter.ToInt32(data, 1);
+        if (nameLength < 0 || HeaderOffsetName + nameLength > data.Length) // Validate nameLength
+        {
+            throw new ArgumentException("Invalid name length decoded from byte array.");
+        }
+
+        // Decode name string (variable length starting after the header)
+        string name = System.Text.Encoding.UTF8.GetString(data, HeaderOffsetName, nameLength);
+
+        // Calculate the starting position of the parameter-specific data
+        int paramDataOffset = HeaderOffsetName + nameLength;
+        // Calculate the length of the parameter-specific data
+        int paramDataLength = data.Length - paramDataOffset;
+
+        // Create parameter-specific data array
+        byte[] paramData = new byte[paramDataLength];
+        // Copy the parameter-specific data from the main byte array
+        Array.Copy(data, paramDataOffset, paramData, 0, paramDataLength);
+
+        // Look up the registered factory method based on the type identifier
+        if (_typeRegistry.TryGetValue(typeId, out var creator))
+        {
+            // Call the factory method with name and specific data
+            return creator(name, paramData);
+        }
+        // Handle unknown type
+        throw new ArgumentException($"Unknown parameter type identifier: {typeId}");
+    }
+
     // To be implemented by derived classes to provide parameter-specific binary data
     protected abstract byte[] GetParameterSpecificBinaryData();
 
     // To be implemented by derived classes to provide their type identifier
     protected abstract byte GetTypeIdentifier();
 
-    // Static method for creating parameter instance from binary data
-    public virtual IIndicatorParameter FromBinary(byte[] data)
+    // To be implemented by derived classes to update from parameter-specific binary data
+    protected abstract void UpdateFromParameterSpecificBinaryData(byte[] data);
+
+    /// <summary>
+    /// Updates the current parameter instance from a binary representation.
+    /// Assumes the byte array was created using ToBinary() for the same parameter type and name.
+    /// </summary>
+    /// <param name="data">The byte array containing the serialized parameter.</param>
+    /// <exception cref="ArgumentException">Thrown if the type identifier or name doesn't match, or data is malformed.</exception>
+    public void UpdateFromBinary(byte[] data)
     {
-        // Get type identifier
-        byte typeId = data[0];
+        // Header structure: [TypeID (1 byte)][Name Length (4 bytes)][Name (variable bytes)][Parameter Data (variable bytes)]
+        const int HeaderOffsetName = 1 + 4; // Offset after TypeID (1) and Name Length (4)
 
-        // Extract name
-        int nameLength = BitConverter.ToInt32(data, 1);
-        string name = System.Text.Encoding.UTF8.GetString(data, 5, nameLength);
-
-        // Create parameter-specific data array
-        byte[] paramData = new byte[data.Length - (5 + nameLength)];
-        Array.Copy(data, 5 + nameLength, paramData, 0, paramData.Length);
-
-        // Create appropriate parameter type based on type identifier
-        return CreateParameterFromBinary(typeId, name, paramData);
-    }
-
-    // To be implemented by factory method to create appropriate parameter instance
-    protected static IIndicatorParameter CreateParameterFromBinary(byte typeId, string name, byte[] paramData)
-    {
-        if (_typeRegistry.TryGetValue(typeId, out var creator))
+        if (data == null || data.Length < HeaderOffsetName) // Basic validation
         {
-            return creator(name, paramData);
+            throw new ArgumentException("Input byte array is null or too short to contain header.", nameof(data));
         }
 
-        throw new ArgumentException($"Unknown parameter type identifier: {typeId}");
+        // Get type identifier (first byte) and verify it matches
+        byte typeId = data[0];
+        if (typeId != GetTypeIdentifier())
+        {
+            throw new ArgumentException($"Type identifier mismatch. Expected {GetTypeIdentifier()}, got {typeId}.", nameof(data));
+        }
+
+        // Extract name length (4 bytes starting at index 1)
+        int nameLength = BitConverter.ToInt32(data, 1);
+        if (nameLength < 0 || HeaderOffsetName + nameLength > data.Length) // Validate nameLength
+        {
+            throw new ArgumentException("Invalid name length decoded from byte array.", nameof(data));
+        }
+
+        // Decode name string and verify it matches
+        string decodedName = System.Text.Encoding.UTF8.GetString(data, HeaderOffsetName, nameLength);
+        if (decodedName != Name)
+        {
+            throw new ArgumentException($"Parameter name mismatch. Expected '{Name}', got '{decodedName}'.", nameof(data));
+        }
+
+        // Calculate the starting position and length of the parameter-specific data
+        int paramDataOffset = HeaderOffsetName + nameLength;
+        int paramDataLength = data.Length - paramDataOffset;
+
+        // Extract parameter-specific data
+        byte[] paramData = new byte[paramDataLength];
+        Array.Copy(data, paramDataOffset, paramData, 0, paramDataLength);
+
+        // Call the derived class implementation to update state from specific data
+        UpdateFromParameterSpecificBinaryData(paramData);
+        // Potentially invalidate any cached state in the parameter itself if needed
+        // InvalidateCache();
     }
 
-    public abstract void IncrementSingle();
-    public abstract bool CanIncrement();
+    public abstract bool IncrementSingle();
     public abstract IIndicatorParameter DeepClone();
     public abstract List<ParameterDescriptor> GetProperties();
     public abstract IIndicatorParameter GetRandomNeighbor(Random random);
     public abstract void UpdateFromDescriptor(ParameterDescriptor descriptor);
     public abstract int GetPermutationCount();
     public abstract void Reset();
-
-    public override int GetHashCode()
-    {
-        return HashCode.Combine(Name, GetAdditionalHashCodeComponents());
-    }
-
     protected abstract int GetAdditionalHashCodeComponents();
 
     /// <summary>
-    /// Generates all possible permutations of parameters and returns them as binary data
+    /// Generates all possible permutations for this specific parameter type based on its ranges and steps.
     /// </summary>
-    /// <typeparam name="T">The specific parameter type</typeparam>
-    /// <param name="factory">Factory function to create an initial parameter instance</param>
-    /// <returns>List of binary representations of all permutations</returns>
-    protected static List<byte[]> GenerateAllPermutationsBinary<T>(Func<T> factory) where T : IndicatorParameterBase
+    /// <returns>A list of byte arrays, each representing one parameter permutation.</returns>
+    public virtual List<byte[]> GenerateAllPermutationsBinary()
     {
-        var result = new List<byte[]>();
+        var permutations = new List<byte[]>();
+        var clone = DeepClone(); // Work on a clone
+        clone.Reset(); // Start from the minimum values
 
-        // Create initial instance
-        var parameter = factory();
+        permutations.Add(clone.ToBinary()); // Add the initial state
 
-        // Reset to ensure we start from the minimum values
-        parameter.Reset();
-
-        // Add first permutation
-        result.Add(parameter.ToBinary());
-
-        // Generate all permutations
-        while (parameter.CanIncrement())
+        while (clone.IncrementSingle())
         {
-            parameter.IncrementSingle();
-            result.Add(parameter.ToBinary());
+            permutations.Add(clone.ToBinary());
         }
 
-        return result;
+        return permutations;
     }
 
-    /// <summary>
-    /// Deserializes all binary permutations back to parameter objects
-    /// </summary>
-    /// <param name="binaryPermutations">Collection of binary serialized parameters</param>
-    /// <returns>List of deserialized parameter objects</returns>
-    public List<IIndicatorParameter> DeserializeAllPermutations(IEnumerable<byte[]> binaryPermutations)
+    // Base implementation of equality comparison
+    public bool Equals(IIndicatorParameter? other)
     {
-        var result = new List<IIndicatorParameter>();
+        if (other == null || GetType() != other.GetType())
+            return false;
 
-        foreach (var binary in binaryPermutations)
-        {
-            result.Add(FromBinary(binary));
-        }
+        return Name == other.Name;
+    }
 
-        return result;
+    // Base implementation of GetHashCode
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Name, GetAdditionalHashCodeComponents());
     }
 }
