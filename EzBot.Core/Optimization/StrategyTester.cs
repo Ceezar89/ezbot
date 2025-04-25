@@ -26,6 +26,7 @@ public class StrategyTester
     private readonly ConcurrentDictionary<string, (IndicatorCollection Params, BacktestResult Result)> Results = new();
     // Shared parameter cache to prevent duplicate backtesting across threads
     private readonly ConcurrentDictionary<string, bool> processedParameters = new();
+    private readonly ConcurrentBag<IndicatorCollection> allPermutations = [];
     private readonly Stopwatch totalStopwatch = new();
     private long currentCombinationIndex = 0;
     private int terminatedEarlyCount = 0;
@@ -88,70 +89,75 @@ public class StrategyTester
         // Load and prepare historical data - do this once upfront
         historicalData = LoadAndPrepareData(dataFilePath, lookbackDays, timeFrame);
 
-        // Calculate total number of parameter combinations to test
-        var templateCollection = new IndicatorCollection(strategyType);
+        Console.WriteLine($"Generating all permutations for {strategyType}");
 
-        // Print debug information about individual indicators
-        foreach (var indicator in templateCollection)
-        {
-            int permutations = indicator.GetParameters().GetPermutationCount();
-        }
+        allPermutations = [.. IndicatorCollection.GenerateAllPermutations(strategyType)];
+        totalCombinations = allPermutations.Count;
 
-        // Calculate theoretical total and verify with actual iteration count
-        int theoreticalTotal = templateCollection.GetTotalParameterPermutations();
+        // // Calculate total number of parameter combinations to test
+        // var templateCollection = new IndicatorCollection(strategyType);
 
-        // Print the initial parameter state
+        // // Print debug information about individual indicators
+        // foreach (var indicator in templateCollection)
+        // {
+        //     int permutations = indicator.GetParameters().GetPermutationCount();
+        // }
 
-        // Print the first few iterations to check parameter changes
-        int iterations = 0;
-        var testCollection = templateCollection.DeepClone();
-        testCollection.ResetIteration();
+        // // Calculate theoretical total and verify with actual iteration count
+        // int theoreticalTotal = templateCollection.GetTotalParameterPermutations();
 
-        while (iterations < 5 && testCollection.Next())
-        {
-            iterations++;
-        }
+        // // Print the initial parameter state
 
-        // Directly count actual permutations (can be slow for large numbers)
-        int actualCount = templateCollection.GetTotalParameterPermutations();
+        // // Print the first few iterations to check parameter changes
+        // int iterations = 0;
+        // var testCollection = templateCollection.DeepClone();
+        // testCollection.ResetIteration();
+
+        // while (iterations < 5 && testCollection.Next())
+        // {
+        //     iterations++;
+        // }
+
+        // // Directly count actual permutations (can be slow for large numbers)
+        // int actualCount = templateCollection.GetTotalParameterPermutations();
 
         // Check if counts match
-        if (theoreticalTotal != actualCount)
-        {
-            Console.WriteLine("\nWARNING: Mismatch between theoretical and actual parameter combinations!");
-            Console.WriteLine("This indicates an issue with parameter ranges, steps, or increment logic.");
-            Console.WriteLine($"Theoretical: {theoreticalTotal:N0}, Actual: {actualCount:N0}");
+        // if (theoreticalTotal != actualCount)
+        // {
+        //     Console.WriteLine("\nWARNING: Mismatch between theoretical and actual parameter combinations!");
+        //     Console.WriteLine("This indicates an issue with parameter ranges, steps, or increment logic.");
+        //     Console.WriteLine($"Theoretical: {theoreticalTotal:N0}, Actual: {actualCount:N0}");
 
-            // Analyze each indicator to identify which ones have discrepancies
-            Console.WriteLine("\nAnalyzing indicators for discrepancies:");
-            foreach (var indicator in templateCollection)
-            {
-                var indType = indicator.GetType().Name;
-                var indParams = indicator.GetParameters();
-                var indPermCount = indParams.GetPermutationCount();
+        //     // Analyze each indicator to identify which ones have discrepancies
+        //     Console.WriteLine("\nAnalyzing indicators for discrepancies:");
+        //     foreach (var indicator in templateCollection)
+        //     {
+        //         var indType = indicator.GetType().Name;
+        //         var indParams = indicator.GetParameters();
+        //         var indPermCount = indParams.GetPermutationCount();
 
-                // Count actual permutations for this single indicator
-                var singleIndCollection = new IndicatorCollection();
-                singleIndCollection.Add((IIndicator)Activator.CreateInstance(indicator.GetType(), indParams.DeepClone())!);
-                int actualIndCount = singleIndCollection.GetTotalParameterPermutations();
+        //         // Count actual permutations for this single indicator
+        //         var singleIndCollection = new IndicatorCollection();
+        //         singleIndCollection.Add((IIndicator)Activator.CreateInstance(indicator.GetType(), indParams.DeepClone())!);
+        //         int actualIndCount = singleIndCollection.GetTotalParameterPermutations();
 
-                string match = indPermCount == actualIndCount ? "✓" : "✗";
-                Console.WriteLine($"- {indType}: Theoretical {indPermCount}, Actual {actualIndCount} {match}");
+        //         string match = indPermCount == actualIndCount ? "✓" : "✗";
+        //         Console.WriteLine($"- {indType}: Theoretical {indPermCount}, Actual {actualIndCount} {match}");
 
-                if (indPermCount != actualIndCount)
-                {
-                    // Print parameter details for mismatched indicators
-                    var props = indParams.GetProperties();
-                    foreach (var prop in props)
-                    {
-                        Console.WriteLine($"  • {prop.Name}: Min={prop.Min}, Max={prop.Max}, Step={prop.Step}, CurrentValue={prop.Value}");
-                    }
-                }
-            }
-        }
+        //         if (indPermCount != actualIndCount)
+        //         {
+        //             // Print parameter details for mismatched indicators
+        //             var props = indParams.GetProperties();
+        //             foreach (var prop in props)
+        //             {
+        //                 Console.WriteLine($"  • {prop.Name}: Min={prop.Min}, Max={prop.Max}, Step={prop.Step}, CurrentValue={prop.Value}");
+        //             }
+        //         }
+        //     }
+        // }
 
         // Use the actual count for processing
-        totalCombinations = actualCount;
+        // totalCombinations = actualCount;
         Console.WriteLine();
 
         // Validate that we have a reasonable number of combinations
@@ -161,33 +167,6 @@ public class StrategyTester
         }
     }
 
-    /// <summary>
-    /// Generates a unique key for parameter configuration to ensure uniqueness in results
-    /// </summary>
-    private string GenerateParameterKey(IndicatorCollection parameters)
-    {
-        // Create a string representation of parameter values
-        var key = new System.Text.StringBuilder();
-
-        foreach (var indicator in parameters)
-        {
-            var indParams = indicator.GetParameters();
-            var props = indParams.GetProperties();
-
-            // Add indicator type to key
-            key.Append(indicator.GetType().Name).Append(':');
-
-            // Add each parameter value to key
-            foreach (var prop in props)
-            {
-                key.Append(prop.Name).Append('=').Append(prop.Value).Append(',');
-            }
-
-            key.Append(';');
-        }
-
-        return key.ToString();
-    }
 
     /// <summary>
     /// Loads and prepares the historical data - extracted to a method to improve readability
@@ -276,90 +255,50 @@ public class StrategyTester
     /// </summary>
     private void ProcessParameters()
     {
-        // Each worker thread will use its own indicator collection
-        var parameters = new IndicatorCollection(strategyType);
-
         while (true)
         {
-            // Get the next batch of combinations to process
-            long batchStart = Interlocked.Add(ref currentCombinationIndex, BatchSize) - BatchSize;
+            // // Get the next batch of combinations to process
+            // long batchStart = Interlocked.Add(ref currentCombinationIndex, BatchSize) - BatchSize;
 
-            // Check if we've processed all combinations
-            if (batchStart >= totalCombinations)
-                break;
+            // // Check if we've processed all combinations
+            // if (batchStart >= totalCombinations)
+            //     break;
 
-            // Calculate actual batch size (may be smaller for the last batch)
-            int actualBatchSize = (int)Math.Min(BatchSize, totalCombinations - batchStart);
-
-            // Reset parameters to starting values
-            parameters.ResetIteration();
+            // // Calculate actual batch size (may be smaller for the last batch)
+            // int actualBatchSize = (int)Math.Min(BatchSize, totalCombinations - batchStart);
 
             try
             {
-                // Skip to the batch start position
-                for (long i = 0; i < batchStart; i++)
+                List<IndicatorCollection> parameterInstances = [];
+                // try take a bachsize amount of parameters from the allPermutations list
+                int index = 0;
+                while (index < BatchSize && index < allPermutations.Count)
                 {
-                    if (!parameters.Next())
+                    if (allPermutations.TryTake(out var parameter))
                     {
-                        // We've reached the end unexpectedly
-                        // This should not happen if totalCombinations is correct
-                        return;
+                        parameterInstances.Add(parameter);
+                        index++;
                     }
+                    else break;
                 }
 
-                // Create a batch of strategies to test simultaneously
+                if (parameterInstances.Count == 0)
+                    break;
+
+                int actualBatchSize = parameterInstances.Count;
+
+                // Create batch collections
                 var strategies = new List<ITradingStrategy>(actualBatchSize);
-                var parameterInstances = new List<IndicatorCollection>(actualBatchSize);
                 var parameterKeys = new List<string>(actualBatchSize);
 
-                // Process each parameter combination and check for duplicates first
-                int effectiveBatchSize = 0;
-                for (int i = 0; i < actualBatchSize; i++)
+                foreach (var parameter in parameterInstances)
                 {
-                    try
+                    string paramKey = IndicatorCollection.GenerateParameterKey(parameter);
+                    if (processedParameters.TryAdd(paramKey, true))
                     {
-                        // Clone the current parameter set
-                        var paramClone = parameters.DeepClone();
-
-                        // Check if we've already processed this parameter configuration
-                        string paramKey = GenerateParameterKey(paramClone);
-
-                        // If this parameter set hasn't been processed yet, mark it and add to batch
-                        if (processedParameters.TryAdd(paramKey, true))
-                        {
-                            try
-                            {
-                                // Create strategy with this parameter set
-                                var strategy = StrategyFactory.CreateStrategy(strategyType, paramClone);
-
-                                // Add to batch for processing
-                                strategies.Add(strategy);
-                                parameterInstances.Add(paramClone);
-                                parameterKeys.Add(paramKey);
-                                effectiveBatchSize++;
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"Exception creating strategy: {ex.Message}");
-                                // Remove from processed parameters since we couldn't create it
-                                processedParameters.TryRemove(paramKey, out _);
-                            }
-                        }
-
-                        // Move to the next parameter combination if not done with batch
-                        if (i < actualBatchSize - 1 && !parameters.Next())
-                        {
-                            // We've reached the end of all combinations
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Exception generating parameters: {ex.Message}");
-
-                        // Move to next parameter set even if this one failed
-                        if (i < actualBatchSize - 1)
-                            parameters.Next();
+                        var strategy = StrategyFactory.CreateStrategy(strategyType, parameter);
+                        strategies.Add(strategy);
+                        parameterKeys.Add(paramKey);
                     }
                 }
 
@@ -450,7 +389,7 @@ public class StrategyTester
 
         foreach (var result in groupedResults)
         {
-            var key = GenerateParameterKey(result.Params);
+            var key = IndicatorCollection.GenerateParameterKey(result.Params);
             newResults.TryAdd(key, result);
         }
 

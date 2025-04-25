@@ -177,7 +177,7 @@ public static class Backtest
                 {
                     try
                     {
-                        var tradeOrder = strategy.GetAction(historicalData, i);
+                        var tradeOrder = strategy.GetAction(historicalData);
 
                         if (tradeOrder.TradeType != TradeType.None)
                         {

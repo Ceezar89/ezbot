@@ -41,32 +41,6 @@ public abstract class TradingStrategyBase : ITradingStrategy
         };
     }
 
-    // Optimized version that avoids creating a new sublist
-    public TradeOrder GetAction(List<BarData> bars, int currentIndex)
-    {
-        ArgumentNullException.ThrowIfNull(bars);
-
-        if (currentIndex < 0 || currentIndex >= bars.Count)
-            throw new ArgumentOutOfRangeException(nameof(currentIndex));
-
-        // Using method UpdateAllWithBoundary which is assumed to update indicators 
-        // considering only data up to currentIndex
-        _indicators.UpdateAllWithBoundary(bars, 0, currentIndex);
-        _signals.Clear();
-
-        foreach (var indicator in _indicators)
-        {
-            ProcessIndicator(indicator);
-        }
-
-        return ExecuteStrategy() switch
-        {
-            TradeType.Long => new TradeOrder(TradeType.Long, _signals.LongStopLoss, _signals.LongTakeProfit),
-            TradeType.Short => new TradeOrder(TradeType.Short, _signals.ShortStopLoss, _signals.ShortTakeProfit),
-            _ => new TradeOrder(TradeType.None, double.NaN, double.NaN)
-        };
-    }
-
     private void ProcessIndicator(IIndicator indicator)
     {
         switch (indicator)

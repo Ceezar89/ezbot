@@ -53,30 +53,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         _indicators = [.. indicators];
     }
 
-    /// <summary>
-    /// Initializes a new instance of the IndicatorCollection for a specific strategy type,
-    /// applying a given parameter permutation.
-    /// </summary>
-    /// <param name="strategyType">The type of strategy to initialize indicators for.</param>
-    /// <param name="parameterPermutation">A list of byte arrays representing the parameter state for each indicator, in order.</param>
-    /// <exception cref="ArgumentException">Thrown if the number of parameter permutations does not match the number of indicators for the strategy.</exception>
-    public IndicatorCollection(StrategyType strategyType, List<byte[]> parameterPermutation) : this(strategyType) // Call the existing constructor to initialize indicators
-    {
-        if (_indicators.Count != parameterPermutation.Count)
-        {
-            throw new ArgumentException($"Parameter permutation count ({parameterPermutation.Count}) does not match indicator count ({_indicators.Count}) for strategy {strategyType}.");
-        }
-
-        for (int i = 0; i < _indicators.Count; i++)
-        {
-            // Use the UpdateFromBinary method implemented in IIndicatorParameter/IndicatorParameterBase
-            _indicators[i].GetParameters().UpdateFromBinary(parameterPermutation[i]);
-        }
-        // Note: Cache invalidation happens automatically in UpdateFromBinary if implemented correctly,
-        // but we invalidate here again just in case and because the collection state changed significantly.
-        InvalidateCache();
-    }
-
     public void Add(IIndicator indicator)
     {
         _indicators.Add(indicator);
@@ -85,6 +61,51 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
 
     public int Count => _indicators.Count;
     public IIndicator this[int index] => _indicators[index];
+
+    public static List<IndicatorCollection> GenerateAllPermutations(StrategyType strategyType)
+    {
+        Dictionary<string, IndicatorCollection> indicatorCollections = [];
+        var collection = new IndicatorCollection(strategyType);
+        collection.ResetIteration();
+
+        // add the first collection to the dictionary
+        string key = GenerateParameterKey(collection);
+        indicatorCollections.Add(key, collection);
+
+        // add the rest of the collections to the dictionary
+        while (collection.Next())
+        {
+            key = GenerateParameterKey(collection);
+            indicatorCollections.TryAdd(key, collection);
+        }
+        return [.. indicatorCollections.Values];
+    }
+
+    public static string GenerateParameterKey(IndicatorCollection parameters)
+    {
+        // Create a string representation of parameter values
+        var key = new System.Text.StringBuilder();
+
+        foreach (var indicator in parameters)
+        {
+            var indParams = indicator.GetParameters();
+            var props = indParams.GetProperties();
+
+            // Add indicator type to key
+            key.Append(indicator.GetType().Name).Append(':');
+
+            // Add each parameter value to key
+            foreach (var prop in props)
+            {
+                key.Append(prop.Name).Append('=').Append(prop.Value).Append(',');
+            }
+
+            key.Append(';');
+        }
+
+        return key.ToString();
+    }
+
 
     /// <summary>
     /// Calculates the total number of combined parameter permutations across all indicators in the collection.
@@ -156,21 +177,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         }
     }
 
-    // New method that updates indicators with a subset of bars defined by start and end indices
-    public void UpdateAllWithBoundary(List<BarData> bars, int startIndex, int endIndex)
-    {
-        if (startIndex < 0 || endIndex >= bars.Count || startIndex > endIndex)
-            throw new ArgumentOutOfRangeException($"Invalid indices: start={startIndex}, end={endIndex}, count={bars.Count}");
-
-        // Create a view of the data without allocating a new list
-        BarDataCollectionView barDataView = new(bars, startIndex, endIndex);
-
-        foreach (var indicator in _indicators)
-        {
-            indicator.SetBarData(barDataView);
-        }
-    }
-
     public IndicatorCollection DeepClone()
     {
         var cloneList = new List<IIndicator>();
@@ -200,68 +206,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
             indicator.UpdateParameters(randomNeighbor);
         }
         InvalidateCache();
-    }
-
-    /// <summary>
-    /// Generates all possible parameter permutations for each indicator in the collection,
-    /// storing them as binary data.
-    /// </summary>
-    /// <returns>A list where each inner list contains all binary permutations for the indicator at that index.</returns>
-    public List<List<byte[]>> GetAllParameterPermutationsBinary()
-    {
-        var allPermutationsList = new List<List<byte[]>>();
-
-        foreach (var indicator in _indicators)
-        {
-            var parameter = indicator.GetParameters();
-            // reset the parameter to the minimum value - GenerateAllPermutationsBinary already does this
-            // parameter.Reset();
-            if (parameter != null)
-            {
-                allPermutationsList.Add(parameter.GenerateAllPermutationsBinary());
-            }
-            else
-            {
-                // Handle case where an indicator might not have parameters or returns null
-                allPermutationsList.Add([]); // Add an empty list for this indicator
-            }
-        }
-        // Reset the collection state after generating all permutations, as GenerateAllPermutationsBinary modifies clones
-        ResetIteration();
-        return allPermutationsList;
-    }
-
-    /// <summary>
-    /// Computes the Cartesian product of multiple lists of byte arrays.
-    /// Used to generate all combined parameter permutations across indicators.
-    /// </summary>
-    /// <param name="lists">A list of lists, where each inner list contains the permutations for one indicator.</param>
-    /// <returns>A list where each inner list represents one full combined permutation across all indicators.</returns>
-    public static List<List<byte[]>> GenerateCartesianProduct(List<List<byte[]>> lists)
-    {
-        List<List<byte[]>> result = [[]]; // Start with a list containing an empty list
-
-        foreach (var list in lists)
-        {
-            var nextResult = new List<List<byte[]>>();
-            foreach (var existingCombination in result)
-            {
-                foreach (var item in list)
-                {
-                    var newCombination = new List<byte[]>(existingCombination)
-                    {
-                        item
-                    };
-                    nextResult.Add(newCombination);
-                }
-            }
-            result = nextResult;
-
-            // Optimization: If any list is empty, the Cartesian product is empty.
-            if (result.Count == 0) break;
-        }
-
-        return result;
     }
 
     public IEnumerator<IIndicator> GetEnumerator() => _indicators.GetEnumerator();
