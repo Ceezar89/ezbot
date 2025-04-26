@@ -2,10 +2,6 @@ using EzBot.Core.IndicatorParameter;
 using EzBot.Core.Strategy;
 using EzBot.Models;
 using System.Collections;
-using System.Collections.Concurrent;
-using System.Linq;
-using System.Threading.Tasks;
-using System.IO; // Added for BinaryReader/Writer if needed, though parameter methods handle it
 
 namespace EzBot.Core.Indicator;
 
@@ -13,7 +9,6 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
 {
     private readonly List<IIndicator> _indicators;
     private int? _hashCode;
-    private long _currentIterationIndex = 0;
 
     public IndicatorCollection()
     {
@@ -66,17 +61,15 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
     {
         Dictionary<string, IndicatorCollection> indicatorCollections = [];
         var collection = new IndicatorCollection(strategyType);
-        collection.ResetIteration();
+        collection.Reset();
 
         // add the first collection to the dictionary
         string key = GenerateParameterKey(collection);
-        indicatorCollections.Add(key, collection);
-
-        // add the rest of the collections to the dictionary
+        indicatorCollections.Add(key, collection.DeepClone());
         while (collection.Next())
         {
             key = GenerateParameterKey(collection);
-            indicatorCollections.TryAdd(key, collection);
+            indicatorCollections.Add(key, collection.DeepClone());
         }
         return [.. indicatorCollections.Values];
     }
@@ -106,65 +99,34 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         return key.ToString();
     }
 
-
-    /// <summary>
-    /// Calculates the total number of combined parameter permutations across all indicators in the collection.
-    /// This represents the total number of unique states the collection can be in by combining all indicator parameters.
-    /// </summary>
-    /// <returns>The total number of combined parameter permutations (product of individual counts).</returns>
-    public int GetTotalParameterPermutations()
-    {
-        if (_indicators.Count == 0)
-            return 0;
-
-        int totalPermutations = 1;
-
-        foreach (var indicator in _indicators)
-        {
-            totalPermutations *= indicator.GetParameters().GetPermutationCount();
-        }
-
-        return totalPermutations;
-    }
-
-    // Reset the iteration to the beginning
-    public void ResetIteration()
-    {
-        // Reset all indicators to their initial parameter state
-        foreach (IIndicator indicator in _indicators)
-        {
-            indicator.GetParameters().Reset();
-        }
-        _currentIterationIndex = 0;
-        InvalidateCache();
-    }
-
-    // Advances to the next parameter combination using a proper odometer pattern
+    // Advances to the next parameter combination
     // Returns true if successful, false if we've exhausted all combinations
     public bool Next()
     {
         if (_indicators.Count == 0)
             return false;
 
-        // Start from the rightmost indicator (least significant digit)
-        for (int i = _indicators.Count - 1; i >= 0; i--)
+        foreach (var indicator in _indicators)
         {
-            var parameter = _indicators[i].GetParameters();
-
-            // If this indicator can increment, do it and we're done
-            if (parameter.IncrementSingle())
+            var parameters = indicator.GetParameters();
+            if (parameters.IncrementSingle())
             {
-                InvalidateCache();
-                _currentIterationIndex++;
                 return true;
             }
-
-            // This indicator is at its max, so reset it and carry over to the next one
-            parameter.Reset();
+            parameters.Reset();
         }
-
-        // If we get here, all indicators are at their maximum values
         return false;
+    }
+
+    // Reset the iteration to the beginning
+    public void Reset()
+    {
+        // Reset all indicators to their initial parameter state
+        foreach (IIndicator indicator in _indicators)
+        {
+            indicator.GetParameters().Reset();
+        }
+        InvalidateCache();
     }
 
 
@@ -184,7 +146,7 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         {
             // find the type of the indicator and create a new instance of it
             var type = indicator.GetType();
-            var parameters = indicator.GetParameters();
+            var parameters = indicator.GetParameters().DeepClone();
             // create a new instance of the indicator
             var newIndicator = (IIndicator)Activator.CreateInstance(type, parameters)!;
             cloneList.Add(newIndicator);

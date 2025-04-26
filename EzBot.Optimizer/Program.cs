@@ -6,7 +6,7 @@ using System.Globalization;
 string dataFilePath = "../data/btcusd_data.csv";
 
 List<StrategyType> strategyTypes = [StrategyType.EtmaTrend, StrategyType.McGinleyTrend];
-List<TimeFrame> timeFrames = [TimeFrame.Minute30, TimeFrame.Minute15];
+List<TimeFrame> timeFrames = [TimeFrame.TwoHour, TimeFrame.OneHour, TimeFrame.ThirtyMinute, TimeFrame.FifteenMinute];
 List<double> riskPercentages = [1.0, 2.0, 3.0];
 List<int> maxConcurrentTrades = [1, 2, 3];
 
@@ -56,10 +56,6 @@ if (args.Length > 0)
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookbackDays))
                     lookbackDays = parsedLookbackDays;
                 break;
-            // case "--timeframe":
-            //     if (i + 1 < args.Length)
-            //         timeFrames = TimeFrameUtility.ParseTimeFrame(args[++i]);
-            //     break;
             case "--balance":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double balance))
                     initialBalance = balance;
@@ -68,23 +64,19 @@ if (args.Length > 0)
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double fee))
                     feePercentage = fee;
                 break;
-                // case "--risk-percentage":
-                //     if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double risk))
-                //         riskPercentage = [risk];
-                //     break;
         }
     }
 }
 
 try
 {
-    foreach (var strategyType in strategyTypes)
+    foreach (var maxConcurrentTrade in maxConcurrentTrades)
     {
-        foreach (var maxConcurrentTrade in maxConcurrentTrades)
+        foreach (var riskPercentage in riskPercentages)
         {
             foreach (var timeFrame in timeFrames)
             {
-                foreach (var riskPercentage in riskPercentages)
+                foreach (var strategyType in strategyTypes)
                 {
                     var tester = new StrategyTester(
                         dataFilePath,

@@ -7,7 +7,7 @@ public static class TimeFrameUtility
     public static List<BarData> ConvertTimeFrame(List<BarData> sourceData, TimeFrame targetTimeFrame)
     {
         // If target is 1 minute or sourceData is empty, just return the source data
-        if (targetTimeFrame == TimeFrame.Minute1 || sourceData.Count == 0)
+        if (targetTimeFrame == TimeFrame.OneMinute || sourceData.Count == 0)
         {
             return sourceData;
         }
@@ -52,10 +52,10 @@ public static class TimeFrameUtility
     {
         return timeFrame switch
         {
-            TimeFrame.Minute1 => "1m",
-            TimeFrame.Minute5 => "5m",
-            TimeFrame.Minute15 => "15m",
-            TimeFrame.Minute30 => "30m",
+            TimeFrame.OneMinute => "1m",
+            TimeFrame.FiveMinute => "5m",
+            TimeFrame.FifteenMinute => "15m",
+            TimeFrame.ThirtyMinute => "30m",
             TimeFrame.OneHour => "1h",
             TimeFrame.TwoHour => "2h",
             TimeFrame.FourHour => "4h",
@@ -79,10 +79,10 @@ public static class TimeFrameUtility
             {
                 return minutes switch
                 {
-                    1 => TimeFrame.Minute1,
-                    5 => TimeFrame.Minute5,
-                    15 => TimeFrame.Minute15,
-                    30 => TimeFrame.Minute30,
+                    1 => TimeFrame.OneMinute,
+                    5 => TimeFrame.FiveMinute,
+                    15 => TimeFrame.FifteenMinute,
+                    30 => TimeFrame.ThirtyMinute,
                     _ => (TimeFrame)minutes // Custom minute value
                 };
             }
@@ -118,6 +118,6 @@ public static class TimeFrameUtility
         }
 
         // Default to 1 minute if parsing fails
-        return TimeFrame.Minute1;
+        return TimeFrame.OneMinute;
     }
 }

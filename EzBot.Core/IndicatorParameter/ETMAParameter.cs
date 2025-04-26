@@ -9,9 +9,7 @@ public class EtmaParameter : IndicatorParameterBase
 
     // Ranges
     private static readonly (int Min, int Max) LengthRange = (5, 50);
-    // private static readonly (int Min, int Max) LengthRange = (5, 5);
     private static readonly (int Min, int Max) SignalStrengthRange = (0, 2);
-    // private static readonly (int Min, int Max) SignalStrengthRange = (0, 1);
 
     // Steps
     private const int LengthRangeStep = 5;

@@ -2,10 +2,10 @@ namespace EzBot.Models;
 
 public enum TimeFrame
 {
-    Minute1 = 1,
-    Minute5 = 5,
-    Minute15 = 15,
-    Minute30 = 30,
+    OneMinute = 1,
+    FiveMinute = 5,
+    FifteenMinute = 15,
+    ThirtyMinute = 30,
     OneHour = 60,
     TwoHour = 120,
     FourHour = 240,

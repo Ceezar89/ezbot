@@ -30,6 +30,8 @@ public class StrategyTester
     private readonly Stopwatch totalStopwatch = new();
     private long currentCombinationIndex = 0;
     private int terminatedEarlyCount = 0;
+    private int successfulCount = 0;
+    private int failedCount = 0;
     private int duplicateCount = 0;
     private DateTime lastSaveTime = DateTime.Now;
     private readonly TimeSpan saveInterval = TimeSpan.FromSeconds(60);
@@ -94,70 +96,6 @@ public class StrategyTester
         allPermutations = [.. IndicatorCollection.GenerateAllPermutations(strategyType)];
         totalCombinations = allPermutations.Count;
 
-        // // Calculate total number of parameter combinations to test
-        // var templateCollection = new IndicatorCollection(strategyType);
-
-        // // Print debug information about individual indicators
-        // foreach (var indicator in templateCollection)
-        // {
-        //     int permutations = indicator.GetParameters().GetPermutationCount();
-        // }
-
-        // // Calculate theoretical total and verify with actual iteration count
-        // int theoreticalTotal = templateCollection.GetTotalParameterPermutations();
-
-        // // Print the initial parameter state
-
-        // // Print the first few iterations to check parameter changes
-        // int iterations = 0;
-        // var testCollection = templateCollection.DeepClone();
-        // testCollection.ResetIteration();
-
-        // while (iterations < 5 && testCollection.Next())
-        // {
-        //     iterations++;
-        // }
-
-        // // Directly count actual permutations (can be slow for large numbers)
-        // int actualCount = templateCollection.GetTotalParameterPermutations();
-
-        // Check if counts match
-        // if (theoreticalTotal != actualCount)
-        // {
-        //     Console.WriteLine("\nWARNING: Mismatch between theoretical and actual parameter combinations!");
-        //     Console.WriteLine("This indicates an issue with parameter ranges, steps, or increment logic.");
-        //     Console.WriteLine($"Theoretical: {theoreticalTotal:N0}, Actual: {actualCount:N0}");
-
-        //     // Analyze each indicator to identify which ones have discrepancies
-        //     Console.WriteLine("\nAnalyzing indicators for discrepancies:");
-        //     foreach (var indicator in templateCollection)
-        //     {
-        //         var indType = indicator.GetType().Name;
-        //         var indParams = indicator.GetParameters();
-        //         var indPermCount = indParams.GetPermutationCount();
-
-        //         // Count actual permutations for this single indicator
-        //         var singleIndCollection = new IndicatorCollection();
-        //         singleIndCollection.Add((IIndicator)Activator.CreateInstance(indicator.GetType(), indParams.DeepClone())!);
-        //         int actualIndCount = singleIndCollection.GetTotalParameterPermutations();
-
-        //         string match = indPermCount == actualIndCount ? "✓" : "✗";
-        //         Console.WriteLine($"- {indType}: Theoretical {indPermCount}, Actual {actualIndCount} {match}");
-
-        //         if (indPermCount != actualIndCount)
-        //         {
-        //             // Print parameter details for mismatched indicators
-        //             var props = indParams.GetProperties();
-        //             foreach (var prop in props)
-        //             {
-        //                 Console.WriteLine($"  • {prop.Name}: Min={prop.Min}, Max={prop.Max}, Step={prop.Step}, CurrentValue={prop.Value}");
-        //             }
-        //         }
-        //     }
-        // }
-
-        // Use the actual count for processing
-        // totalCombinations = actualCount;
         Console.WriteLine();
 
         // Validate that we have a reasonable number of combinations
@@ -257,16 +195,6 @@ public class StrategyTester
     {
         while (true)
         {
-            // // Get the next batch of combinations to process
-            // long batchStart = Interlocked.Add(ref currentCombinationIndex, BatchSize) - BatchSize;
-
-            // // Check if we've processed all combinations
-            // if (batchStart >= totalCombinations)
-            //     break;
-
-            // // Calculate actual batch size (may be smaller for the last batch)
-            // int actualBatchSize = (int)Math.Min(BatchSize, totalCombinations - batchStart);
-
             try
             {
                 List<IndicatorCollection> parameterInstances = [];
@@ -333,6 +261,7 @@ public class StrategyTester
                             // Add successful strategies to results
                             else if (result.NetProfit > 0 && result.WinRate > 0.5)
                             {
+                                Interlocked.Increment(ref successfulCount);
                                 if (!Results.TryAdd(paramKey, (parameterInstances[i], result)))
                                 {
                                     // It's a duplicate - check if the new result is better
@@ -344,7 +273,14 @@ public class StrategyTester
                                     Interlocked.Increment(ref duplicateCount);
                                 }
                             }
+                            else
+                            {
+                                Interlocked.Increment(ref failedCount);
+                            }
                         }
+
+                        // Increment the processed combinations counter
+                        Interlocked.Add(ref currentCombinationIndex, backtestResults.Count);
                     }
                     catch (Exception ex)
                     {
@@ -674,8 +610,11 @@ public class StrategyTester
         Console.WriteLine("=====================");
         Console.WriteLine($"Tested: {currentCombinationIndex:N0} combinations");
         Console.WriteLine($"Terminated: {terminatedEarlyCount:N0} strategies");
-        Console.WriteLine($"Successful: {Results.Count:N0} unique strategies");
-        Console.WriteLine($"Duplicate successes: {duplicateCount:N0} strategies");
+        Console.WriteLine($"Successful: {successfulCount:N0} unique strategies");
+        Console.WriteLine($"Failed: {failedCount:N0} unique strategies");
+        Console.WriteLine($"Results Count: {Results.Count:N0} unique strategies");
+        Console.WriteLine($"Duplicate: {duplicateCount:N0} strategies");
+        Console.WriteLine($"Processed: {processedParameters.Count:N0} unique strategies");
         Console.WriteLine($"Total time: {totalStopwatch.Elapsed}");
 
         // Display termination reasons if there are any

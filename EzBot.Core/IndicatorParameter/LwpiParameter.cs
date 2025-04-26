@@ -8,9 +8,7 @@ public class LwpiParameter : IndicatorParameterBase
 
     // Ranges
     private static readonly (int Min, int Max) PeriodRange = (5, 50);
-    // private static readonly (int Min, int Max) PeriodRange = (5, 5);
     private static readonly (int Min, int Max) SmoothingPeriodRange = (5, 50);
-    // private static readonly (int Min, int Max) SmoothingPeriodRange = (5, 10);
 
     // Steps
     private const int PeriodRangeStep = 5;
