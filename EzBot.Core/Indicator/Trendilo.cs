@@ -1,6 +1,7 @@
 using EzBot.Common;
 using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
+using System.Linq;
 
 namespace EzBot.Core.Indicator;
 
@@ -8,6 +9,7 @@ public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParam
 {
     private readonly record struct CalculationState(double AvpchValue, double RmsValue);
     private CalculationState _state;
+    private long _lastProcessedTimestamp;
 
     protected override void ProcessBarData(List<BarData> bars)
     {
@@ -15,6 +17,14 @@ public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParam
         if (bars == null || bars.Count < 2)
         {
             _state = new(0, 0); // Initialize with neutral values
+            return;
+        }
+
+        // Check if we've already processed the latest bar
+        var lastBar = bars[^1];
+        if (IsProcessed(lastBar.TimeStamp) && lastBar.TimeStamp == _lastProcessedTimestamp)
+        {
+            // Already calculated for this timestamp
             return;
         }
 
@@ -46,6 +56,10 @@ public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParam
             {
                 _state = new(0, 0); // Default to neutral state
             }
+
+            // Record this timestamp as processed using base class method
+            RecordProcessed(lastBar.TimeStamp, bars.Count - 1);
+            _lastProcessedTimestamp = lastBar.TimeStamp;
         }
         catch (Exception ex)
         {

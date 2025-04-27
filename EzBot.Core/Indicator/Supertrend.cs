@@ -13,22 +13,25 @@ public class Supertrend(SupertrendParameter parameter) : IndicatorBase<Supertren
 
     protected override void ProcessBarData(List<BarData> bars)
     {
-        // Clear previous calculations
-        _upperBand.Clear();
-        _lowerBand.Clear();
-        _supertrendLine.Clear();
-        _direction.Clear();
-        _atrValues.Clear();
-
         if (bars.Count == 0)
             return;
 
-        // Initialize with default values
-        int currentDirection = 1; // Start with uptrend
-        double supertrendLine = 0;
+        // Resize our collections if needed
+        EnsureCapacity(bars.Count);
+
+        // Find the first bar we need to process using base class method
+        int startIndex = FindStartIndex(bars);
+
+        // If all bars have been processed, we can return
+        if (startIndex >= bars.Count)
+            return;
+
+        // Initialize with default values if starting from the beginning
+        int currentDirection = startIndex > 0 ? _direction[startIndex - 1] : 1;
+        double supertrendLine = startIndex > 0 ? _supertrendLine[startIndex - 1] : 0;
 
         // Calculate ATR and Supertrend for each bar
-        for (int i = 0; i < bars.Count; i++)
+        for (int i = startIndex; i < bars.Count; i++)
         {
             double src = (bars[i].High + bars[i].Low) / 2; // hl2 in pine script
 
@@ -73,7 +76,11 @@ public class Supertrend(SupertrendParameter parameter) : IndicatorBase<Supertren
                 // Wilder's smoothing (RMA in pine script)
                 atrValue = (_atrValues[i - 1] * (Parameter.AtrPeriod - 1) + trueRange) / Parameter.AtrPeriod;
             }
-            _atrValues.Add(atrValue);
+
+            if (i >= _atrValues.Count)
+                _atrValues.Add(atrValue);
+            else
+                _atrValues[i] = atrValue;
 
             // Calculate basic bands for the current bar
             double basicUpperBand = src + Parameter.Factor * atrValue;
@@ -132,10 +139,47 @@ public class Supertrend(SupertrendParameter parameter) : IndicatorBase<Supertren
                 }
             }
 
-            _upperBand.Add(finalUpperBand);
-            _lowerBand.Add(finalLowerBand);
-            _supertrendLine.Add(supertrendLine);
-            _direction.Add(currentDirection);
+            // Update or add values to our lists
+            if (i >= _upperBand.Count)
+            {
+                _upperBand.Add(finalUpperBand);
+                _lowerBand.Add(finalLowerBand);
+                _supertrendLine.Add(supertrendLine);
+                _direction.Add(currentDirection);
+            }
+            else
+            {
+                _upperBand[i] = finalUpperBand;
+                _lowerBand[i] = finalLowerBand;
+                _supertrendLine[i] = supertrendLine;
+                _direction[i] = currentDirection;
+            }
+
+            // Record this timestamp as processed using base class method
+            RecordProcessed(bars[i].TimeStamp, i);
+        }
+    }
+
+    // Ensure our collections can hold at least the specified capacity
+    private void EnsureCapacity(int capacity)
+    {
+        int currentSize = _upperBand.Count;
+        if (currentSize < capacity)
+        {
+            // No need to resize if we're starting fresh
+            if (currentSize > 0)
+            {
+                // Only add the difference between capacity and current size
+                int newItems = capacity - currentSize;
+                for (int i = 0; i < newItems; i++)
+                {
+                    _upperBand.Add(0);
+                    _lowerBand.Add(0);
+                    _supertrendLine.Add(0);
+                    _direction.Add(0);
+                    _atrValues.Add(0);
+                }
+            }
         }
     }
 

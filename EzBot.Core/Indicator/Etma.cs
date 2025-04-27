@@ -13,16 +13,22 @@ namespace EzBot.Core.Indicator
 
         protected override void ProcessBarData(List<BarData> bars)
         {
-            // Clear calculation state
-            _filtETMA.Clear();
-            _sloETMA.Clear();
-            _sigETMA.Clear();
-            _signalEntryLongETMA.Clear();
-            _signalEntryShortETMA.Clear();
+            if (bars.Count == 0)
+                return;
+
+            // Resize all lists if needed
+            EnsureCapacity(bars.Count);
+
+            // Find the first bar we need to process using base class method
+            int startIndex = FindStartIndex(bars);
+
+            // If all bars have been processed, we can return
+            if (startIndex >= bars.Count)
+                return;
 
             double l2ETMA = Parameter.Length / 2.0;
 
-            for (int i = 0; i < bars.Count; i++)
+            for (int i = startIndex; i < bars.Count; i++)
             {
                 double srcETMA = (bars[i].High + bars[i].Low + bars[i].Close + bars[i].Close) / 4.0;
                 double filtETMA_i = 0.0, coefETMA = 0.0;
@@ -38,10 +44,18 @@ namespace EzBot.Core.Indicator
                 }
                 if (coefETMA != 0)
                     filtETMA_i /= coefETMA;
-                _filtETMA.Add(filtETMA_i);
+
+                // Update or add to the list
+                if (i < _filtETMA.Count)
+                    _filtETMA[i] = filtETMA_i;
+                else
+                    _filtETMA.Add(filtETMA_i);
 
                 double sloETMA_i = srcETMA - filtETMA_i;
-                _sloETMA.Add(sloETMA_i);
+                if (i < _sloETMA.Count)
+                    _sloETMA[i] = sloETMA_i;
+                else
+                    _sloETMA.Add(sloETMA_i);
 
                 double previousSlo = (i > 0) ? _sloETMA[i - 1] : 0.0;
                 int sigETMA_i = 0;
@@ -49,7 +63,11 @@ namespace EzBot.Core.Indicator
                     sigETMA_i = (sloETMA_i > previousSlo) ? 2 : 1;
                 else if (sloETMA_i < 0)
                     sigETMA_i = (sloETMA_i < previousSlo) ? -2 : -1;
-                _sigETMA.Add(sigETMA_i);
+
+                if (i < _sigETMA.Count)
+                    _sigETMA[i] = sigETMA_i;
+                else
+                    _sigETMA.Add(sigETMA_i);
 
                 bool signalEntryLong = false, signalEntryShort = false;
                 switch (Parameter.SignalStrength)
@@ -67,8 +85,35 @@ namespace EzBot.Core.Indicator
                         signalEntryShort = bars[i].Close < filtETMA_i;
                         break;
                 }
-                _signalEntryLongETMA.Add(signalEntryLong ? 1 : 0);
-                _signalEntryShortETMA.Add(signalEntryShort ? -1 : 0);
+
+                if (i < _signalEntryLongETMA.Count)
+                    _signalEntryLongETMA[i] = signalEntryLong ? 1 : 0;
+                else
+                    _signalEntryLongETMA.Add(signalEntryLong ? 1 : 0);
+
+                if (i < _signalEntryShortETMA.Count)
+                    _signalEntryShortETMA[i] = signalEntryShort ? -1 : 0;
+                else
+                    _signalEntryShortETMA.Add(signalEntryShort ? -1 : 0);
+
+                // Record this timestamp as processed using base class method
+                RecordProcessed(bars[i].TimeStamp, i);
+            }
+        }
+
+        private void EnsureCapacity(int capacity)
+        {
+            if (_filtETMA.Count < capacity && _filtETMA.Count > 0)
+            {
+                int toAdd = capacity - _filtETMA.Count;
+                for (int i = 0; i < toAdd; i++)
+                {
+                    _filtETMA.Add(0);
+                    _sloETMA.Add(0);
+                    _sigETMA.Add(0);
+                    _signalEntryLongETMA.Add(0);
+                    _signalEntryShortETMA.Add(0);
+                }
             }
         }
 
