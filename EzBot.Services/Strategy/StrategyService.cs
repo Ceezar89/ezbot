@@ -1,5 +1,4 @@
 using EzBot.Core.Strategy;
-using EzBot.Core.Factory;
 using EzBot.Core.Indicator;
 using EzBot.Persistence;
 

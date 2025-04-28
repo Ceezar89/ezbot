@@ -27,8 +27,7 @@ public static class Backtest
         var accounts = new BacktestAccount[strategies.Count];
         var activeOrdersCollection = new Dictionary<int, TradeOrder>[strategies.Count];
         var lastTradeBarIndices = new int[strategies.Count];
-        var inactiveDaysCounts = new int[strategies.Count];
-        var continuousInactivityDays = new double[strategies.Count];
+        var inactiveBarsCounts = new int[strategies.Count]; // Changed from inactiveDaysCounts to inactiveBarsCounts
         var consecutiveLosses = new int[strategies.Count];
         var totalTrades = new int[strategies.Count];
         var peakBalances = new double[strategies.Count];
@@ -56,13 +55,17 @@ public static class Backtest
         // Cache frequently used values
         int maxConcurrentTrades = opt.MaxConcurrentTrades;
         double maxDrawdown = opt.MaxDrawdown;
-        int maxDaysInactive = opt.MaxDaysInactive;
         int historicalDataCount = historicalData.Count;
         int lastIndex = historicalDataCount - 1;
-        double barsPerDay = 24.0 * 60.0 / (int)opt.TimeFrame;
+
+        // Calculate max inactivity threshold in bars rather than days
+        int maxInactiveBars = (int)(historicalDataCount * opt.MaxInactivityPercentage);
 
         // Track which strategies are still active (haven't been terminated early)
         var activeStrategies = Enumerable.Range(0, strategies.Count).ToList();
+
+        // Create a reusable buffer array/list outside the loop
+        var dataBuffer = new List<BarData>(100);
 
         // Main backtest loop
         for (int i = WarmupPeriod; i < historicalDataCount; i++)
@@ -177,7 +180,17 @@ public static class Backtest
                 {
                     try
                     {
-                        var tradeOrder = strategy.GetAction(historicalData);
+                        // Clear and refill buffer
+                        dataBuffer.Clear();
+                        int startIdx = Math.Max(0, i + 1 - 100);
+                        int count = i + 1 - startIdx;
+
+                        for (int bufIdx = 0; bufIdx < count; bufIdx++)
+                        {
+                            dataBuffer.Add(historicalData[startIdx + bufIdx]);
+                        }
+
+                        var tradeOrder = strategy.GetAction(dataBuffer);
 
                         if (tradeOrder.TradeType != TradeType.None)
                         {
@@ -196,28 +209,24 @@ public static class Backtest
                     }
                 }
 
-                // Update inactivity tracking
+                // Update inactivity tracking - now in bars instead of days
                 if (hadTradeActivity)
                 {
-                    continuousInactivityDays[s] = 0;
+                    inactiveBarsCounts[s] = 0;
                     lastTradeBarIndices[s] = i;
                 }
                 else if (activeOrders.Count > 0)
                 {
-                    continuousInactivityDays[s] = 0;
+                    inactiveBarsCounts[s] = 0;
                     lastTradeBarIndices[s] = i;
                 }
                 else
                 {
-                    continuousInactivityDays[s] = (i - lastTradeBarIndices[s]) / barsPerDay;
-
-                    int currentInactiveDays = (int)Math.Floor(continuousInactivityDays[s]);
-                    if (currentInactiveDays > inactiveDaysCounts[s])
-                        inactiveDaysCounts[s] = currentInactiveDays;
+                    inactiveBarsCounts[s] = i - lastTradeBarIndices[s];
                 }
 
                 // Update account metrics
-                account.MaxDaysInactive = inactiveDaysCounts[s];
+                account.MaxDaysInactive = inactiveBarsCounts[s]; // This will store bars now, not days
 
                 // Calculate current drawdown
                 double currentBalance = account.CurrentBalance;
@@ -254,11 +263,11 @@ public static class Backtest
                         terminationReason = $"Extreme drawdown: {currentDrawdown:P2} > {adjustedMaxDrawdown * 1.5:P2}";
                     }
 
-                    // Inactivity check
-                    double adjustedMaxInactivity = maxDaysInactive * (1.0 + 0.5 * (1.0 - progressFactor));
-                    if (inactiveDaysCounts[s] > adjustedMaxInactivity)
+                    double adjustedMaxInactivityBars = maxInactiveBars * (1.0 + 0.5 * (1.0 - progressFactor));
+                    if (inactiveBarsCounts[s] > adjustedMaxInactivityBars)
                     {
-                        terminationReason = $"Extended inactivity: {inactiveDaysCounts[s]} days > {adjustedMaxInactivity:F1} days";
+                        double inactivityPercentage = (double)inactiveBarsCounts[s] / i * 100;
+                        terminationReason = $"Extended inactivity: {inactiveBarsCounts[s]} bars ({inactivityPercentage:F1}%) > {adjustedMaxInactivityBars:F1} bars";
                     }
 
                     if (!string.IsNullOrEmpty(terminationReason))

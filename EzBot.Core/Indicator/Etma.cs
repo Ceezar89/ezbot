@@ -3,7 +3,8 @@ using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Indicator
 {
-    public class Etma(EtmaParameter parameter) : IndicatorBase<EtmaParameter>(parameter), ITrendIndicator
+    public class Etma(EtmaParameter parameter)
+        : IndicatorBase<EtmaParameter>(parameter), ITrendIndicator
     {
         private readonly List<int> _signalEntryLongETMA = [];
         private readonly List<int> _signalEntryShortETMA = [];

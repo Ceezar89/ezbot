@@ -2,7 +2,8 @@ using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Indicator;
-public class AtrBands(AtrBandsParameter parameter) : IndicatorBase<AtrBandsParameter>(parameter), IRiskManagementIndicator
+public class AtrBands(AtrBandsParameter parameter)
+    : IndicatorBase<AtrBandsParameter>(parameter), IRiskManagementIndicator
 {
     private List<double> ATRValues = [];
     private List<double> UpperBand = [];

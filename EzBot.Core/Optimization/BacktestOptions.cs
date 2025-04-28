@@ -1,4 +1,3 @@
-
 using EzBot.Models;
 
 namespace EzBot.Core.Optimization;
@@ -12,10 +11,10 @@ public class BacktestOptions
     public int LookbackDays { get; set; } = 1500;
     public double MaxDrawdown { get; set; } = 0.3;
     public int MaxConcurrentTrades { get; set; } = 1;
-    public int MaxDaysInactive { get; set; } = 7;
     public double RiskPercentage { get; set; } = 1.0;
+    public double MaxInactivityPercentage { get; set; } = 0.05;
 
-    public BacktestOptions(double initialBalance, double feePercentage, int leverage, TimeFrame timeFrame, int lookbackDays, double maxDrawdown, int maxConcurrentTrades, int maxDaysInactive, double riskPercentage)
+    public BacktestOptions(double initialBalance, double feePercentage, int leverage, TimeFrame timeFrame, int lookbackDays, double maxDrawdown, int maxConcurrentTrades, double riskPercentage, double maxInactivityPercentage)
     {
         InitialBalance = initialBalance;
         FeePercentage = feePercentage;
@@ -24,7 +23,7 @@ public class BacktestOptions
         LookbackDays = lookbackDays;
         MaxDrawdown = maxDrawdown;
         MaxConcurrentTrades = maxConcurrentTrades;
-        MaxDaysInactive = maxDaysInactive;
         RiskPercentage = riskPercentage;
+        MaxInactivityPercentage = maxInactivityPercentage;
     }
 }

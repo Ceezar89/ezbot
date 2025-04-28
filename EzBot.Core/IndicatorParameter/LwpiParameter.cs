@@ -1,4 +1,3 @@
-
 namespace EzBot.Core.IndicatorParameter;
 
 public class LwpiParameter : IndicatorParameterBase

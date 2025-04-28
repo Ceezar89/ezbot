@@ -1,11 +1,11 @@
 using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
 using EzBot.Common;
-using System.Linq;
 
 namespace EzBot.Core.Indicator
 {
-    public class NormalizedVolume(NormalizedVolumeParameter parameter) : IndicatorBase<NormalizedVolumeParameter>(parameter), IVolumeIndicator
+    public class NormalizedVolume(NormalizedVolumeParameter parameter)
+        : IndicatorBase<NormalizedVolumeParameter>(parameter), IVolumeIndicator
     {
         private double NVolume;
         private long _lastProcessedTimestamp;

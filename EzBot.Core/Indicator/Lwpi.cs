@@ -1,11 +1,10 @@
 using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
-using System;
-using System.Collections.Generic;
 
 namespace EzBot.Core.Indicator
 {
-    public class Lwpi(LwpiParameter parameter) : IndicatorBase<LwpiParameter>(parameter), ITrendIndicator
+    public class Lwpi(LwpiParameter parameter)
+        : IndicatorBase<LwpiParameter>(parameter), ITrendIndicator
     {
         private readonly List<double> _lwpiValues = [];
         private readonly List<bool> _longSignals = [];

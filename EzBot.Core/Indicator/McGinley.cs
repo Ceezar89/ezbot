@@ -1,11 +1,10 @@
 using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
-using System;
-using System.Collections.Generic;
 
 namespace EzBot.Core.Indicator
 {
-    public class McGinleyDynamic(McGinleyDynamicParameter parameter) : IndicatorBase<McGinleyDynamicParameter>(parameter), ITrendIndicator
+    public class McGinley(McGinleyParameter parameter)
+        : IndicatorBase<McGinleyParameter>(parameter), ITrendIndicator
     {
         private readonly List<double> _mdValues = [];
         private readonly List<int> _signalBullish = [];

@@ -11,16 +11,15 @@ public class BacktestResult
     public double MaxDrawdown { get; set; }
     public double WinRate => TotalTrades > 0 ? (double)WinningTrades / TotalTrades : 0;
     public double WinRatePercent => TotalTrades > 0 ? (double)WinningTrades / TotalTrades * 100 : 0;
+    public int LookbackDays { get; set; }
     public double SharpeRatio { get; set; }
     public int MaxConcurrentTrades { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
-    public int BacktestDurationDays { get; set; }
     public double RiskPercentage { get; set; }
     public double FeePercentage { get; set; }
     public int Leverage { get; set; }
     public TimeFrame TimeFrame { get; set; }
-    public int LookbackDays { get; set; }
     public int MaxDaysInactive { get; set; }
     public bool TerminatedEarly { get; set; } = false;
     public string TerminationReason { get; set; } = string.Empty;

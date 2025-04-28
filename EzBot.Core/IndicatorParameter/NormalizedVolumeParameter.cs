@@ -1,7 +1,3 @@
-using System;
-using System.Linq;
-using System.Collections.Generic;
-
 namespace EzBot.Core.IndicatorParameter;
 
 public class NormalizedVolumeParameter : IndicatorParameterBase

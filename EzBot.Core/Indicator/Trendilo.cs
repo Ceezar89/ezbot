@@ -1,11 +1,11 @@
 using EzBot.Common;
 using EzBot.Models;
 using EzBot.Core.IndicatorParameter;
-using System.Linq;
 
 namespace EzBot.Core.Indicator;
 
-public class Trendilo(TrendiloParameter parameter) : IndicatorBase<TrendiloParameter>(parameter), ITrendIndicator
+public class Trendilo(TrendiloParameter parameter)
+    : IndicatorBase<TrendiloParameter>(parameter), ITrendIndicator
 {
     private readonly record struct CalculationState(double AvpchValue, double RmsValue);
     private CalculationState _state;

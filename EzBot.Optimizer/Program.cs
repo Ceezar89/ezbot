@@ -5,8 +5,20 @@ using System.Globalization;
 
 string dataFilePath = "../data/btcusd_data.csv";
 
-List<StrategyType> strategyTypes = [StrategyType.EtmaTrend, StrategyType.McGinleyTrend];
-List<TimeFrame> timeFrames = [TimeFrame.TwoHour, TimeFrame.OneHour, TimeFrame.ThirtyMinute, TimeFrame.FifteenMinute];
+List<StrategyConfiguration> strategyConfigurations = [];
+
+// Add your strategy configurations here
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.Etma,
+    IndicatorType.Trendilo
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.McGinley,
+    IndicatorType.Trendilo
+]));
+
+List<TimeFrame> timeFrames = [TimeFrame.OneHour, TimeFrame.ThirtyMinute, TimeFrame.FifteenMinute];
 List<double> riskPercentages = [1.0, 2.0, 3.0];
 List<int> maxConcurrentTrades = [1, 2, 3];
 
@@ -16,7 +28,8 @@ double maxDrawdown = 0.3;
 int lookbackDays = 1500;
 int leverage = 10;
 int threadCount = 0;
-int maxDaysInactive = 3;
+bool runSavedConfiguration = false;
+double maxInactivityPercentage = 0.05;
 
 // Parse command line arguments
 if (args.Length > 0)
@@ -36,10 +49,6 @@ if (args.Length > 0)
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedMaxConcurrentTrades))
                     maxConcurrentTrades = [parsedMaxConcurrentTrades];
                 break;
-            case "--max-days-inactive":
-                if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedMaxDaysInactive))
-                    maxDaysInactive = parsedMaxDaysInactive;
-                break;
             case "--max-drawdown":
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMaxDrawdown))
                     maxDrawdown = parsedMaxDrawdown;
@@ -47,10 +56,6 @@ if (args.Length > 0)
             case "--leverage":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLeverage))
                     leverage = parsedLeverage;
-                break;
-            case "--strategy":
-                if (i + 1 < args.Length && Enum.TryParse(args[++i], true, out StrategyType parsed))
-                    strategyTypes = [parsed];
                 break;
             case "--lookback-days":
                 if (i + 1 < args.Length && int.TryParse(args[++i], out int parsedLookbackDays))
@@ -64,33 +69,42 @@ if (args.Length > 0)
                 if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double fee))
                     feePercentage = fee;
                 break;
+            case "--run-saved":
+                runSavedConfiguration = true;
+                break;
+            case "--max-inactivity-percent":
+                if (i + 1 < args.Length && double.TryParse(args[++i], NumberStyles.Any, CultureInfo.InvariantCulture, out double percentage))
+                    maxInactivityPercentage = percentage / 100;
+                break;
         }
     }
 }
 
+
 try
 {
-    foreach (var maxConcurrentTrade in maxConcurrentTrades)
+    foreach (var maxTrades in maxConcurrentTrades)
     {
         foreach (var riskPercentage in riskPercentages)
         {
             foreach (var timeFrame in timeFrames)
             {
-                foreach (var strategyType in strategyTypes)
+                foreach (var strategyConfiguration in strategyConfigurations)
                 {
                     var tester = new StrategyTester(
-                        dataFilePath,
-                        strategyType,
-                        timeFrame,
-                        initialBalance,
-                        feePercentage,
-                        maxConcurrentTrade,
-                        leverage,
-                        lookbackDays,
-                        threadCount,
-                        maxDrawdown,
-                        maxDaysInactive,
-                        riskPercentage
+                        dataFilePath: dataFilePath,
+                        strategyConfiguration: strategyConfiguration,
+                        timeFrame: timeFrame,
+                        initialBalance: initialBalance,
+                        feePercentage: feePercentage,
+                        maxConcurrentTrades: maxTrades,
+                        leverage: leverage,
+                        lookbackDays: lookbackDays,
+                        threadCount: threadCount,
+                        maxDrawdown: maxDrawdown,
+                        riskPercentage: riskPercentage,
+                        maxInactivityPercentage: maxInactivityPercentage,
+                        runSavedConfiguration: runSavedConfiguration
                     );
                     tester.Test();
                 }

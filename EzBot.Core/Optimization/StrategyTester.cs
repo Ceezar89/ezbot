@@ -2,10 +2,10 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using EzBot.Common;
-using EzBot.Core.Factory;
-using EzBot.Core.Indicator;
 using EzBot.Core.Strategy;
+using EzBot.Core.Indicator;
 using EzBot.Models;
+using System.Text.Json.Serialization;
 
 namespace EzBot.Core.Optimization;
 
@@ -16,10 +16,13 @@ namespace EzBot.Core.Optimization;
 public class StrategyTester
 {
     // Core configuration
-    private readonly StrategyType strategyType;
+    private readonly string strategyName;
+    private readonly StrategyConfiguration strategyConfiguration;
     private readonly BacktestOptions backtestOptions;
     private readonly List<BarData> historicalData = [];
     private readonly int threadCount;
+    private readonly bool runSavedConfiguration;
+    private readonly double maxInactivityPercentage;
 
     // State tracking with improved concurrency
     // Use dictionary to track results with unique parameter configurations
@@ -51,7 +54,7 @@ public class StrategyTester
 
     public StrategyTester(
         string dataFilePath,
-        StrategyType strategyType,
+        StrategyConfiguration strategyConfiguration,
         TimeFrame timeFrame = TimeFrame.OneHour,
         double initialBalance = 1000,
         double feePercentage = 0.05,
@@ -60,11 +63,15 @@ public class StrategyTester
         int lookbackDays = 1500,
         int threadCount = -1,
         double maxDrawdown = 0.5,
-        int maxDaysInactive = 14,
-        double riskPercentage = 1.0
+        double riskPercentage = 1.0,
+        double maxInactivityPercentage = 0.05,
+        bool runSavedConfiguration = false
     )
     {
-        this.strategyType = strategyType;
+        this.strategyConfiguration = strategyConfiguration;
+        this.runSavedConfiguration = runSavedConfiguration;
+        this.maxInactivityPercentage = maxInactivityPercentage;
+        strategyName = strategyConfiguration.Name;
 
         // Configure thread count (default to CPU cores - 1)
         this.threadCount = threadCount == -1
@@ -84,16 +91,19 @@ public class StrategyTester
             lookbackDays,
             maxDrawdown,
             maxConcurrentTrades,
-            maxDaysInactive,
-            riskPercentage
+            riskPercentage,
+            maxInactivityPercentage
         );
 
         // Load and prepare historical data - do this once upfront
         historicalData = LoadAndPrepareData(dataFilePath, lookbackDays, timeFrame);
 
-        Console.WriteLine($"Generating all permutations for {strategyType}");
+        if (strategyConfiguration == null)
+        {
+            throw new ArgumentNullException(nameof(strategyConfiguration), "Strategy configuration cannot be null.");
+        }
 
-        allPermutations = [.. IndicatorCollection.GenerateAllPermutations(strategyType)];
+        allPermutations = [.. IndicatorCollection.GenerateAllPermutations(strategyConfiguration)];
         totalCombinations = allPermutations.Count;
 
         Console.WriteLine();
@@ -136,18 +146,62 @@ public class StrategyTester
         isRunning = true;
         totalStopwatch.Restart();
 
-        Console.WriteLine($"- Strategy Type: {strategyType}");
+        Console.WriteLine($"- Strategy Name: {strategyName}");
         Console.WriteLine($"- Worker Thread Count: {threadCount}");
         Console.WriteLine($"- Data Points: {historicalData.Count:N0}");
         Console.WriteLine($"- Time Frame: {backtestOptions.TimeFrame}");
         Console.WriteLine($"- Max Concurrent Trades: {backtestOptions.MaxConcurrentTrades}");
         Console.WriteLine($"- Max Drawdown: {backtestOptions.MaxDrawdown * 100:F0}%");
-        Console.WriteLine($"- Max Days Inactive: {backtestOptions.MaxDaysInactive} days");
         Console.WriteLine($"- Lookback Window: {backtestOptions.LookbackDays} days");
+        Console.WriteLine($"- Max Inactivity Percentage: {maxInactivityPercentage * 100:F0}%");
         Console.WriteLine($"- Initial Balance: ${backtestOptions.InitialBalance:F2}");
         Console.WriteLine($"- Fee Percentage: {backtestOptions.FeePercentage:F2}%");
         Console.WriteLine($"- Leverage: {backtestOptions.Leverage}x");
         Console.WriteLine($"- Risk Percentage: {backtestOptions.RiskPercentage:F2}%");
+
+        // Handle loading and testing a saved configuration if the flag is set
+        if (runSavedConfiguration)
+        {
+            Console.WriteLine("\n[Testing Saved Configuration]");
+            var savedConfig = LoadFromJson(GenerateResultFilename());
+
+            if (savedConfig == null)
+            {
+                Console.WriteLine("Error: No saved configuration found. Exiting test.");
+                isRunning = false;
+                return;
+            }
+
+            Console.WriteLine("Loaded configuration:");
+            Console.WriteLine(IndicatorCollection.GenerateParameterKey(savedConfig));
+
+            // Create a strategy from the saved configuration
+            var strategy = new TradingStrategy(savedConfig);
+
+            // Run a single backtest
+            var result = Backtest.Run(strategy, historicalData, backtestOptions);
+
+            // Display result
+            Console.WriteLine("\nBacktest Results:");
+            Console.WriteLine($"- Net Profit: ${result.NetProfit:F2}");
+            Console.WriteLine($"- Return Percentage: {result.ReturnPercentage:F2}%");
+            Console.WriteLine($"- Win Rate: {result.WinRatePercent:F2}%");
+            Console.WriteLine($"- Total Trades: {result.TotalTrades}");
+            Console.WriteLine($"- Winning Trades: {result.WinningTrades}");
+            Console.WriteLine($"- Losing Trades: {result.LosingTrades}");
+            Console.WriteLine($"- Max Drawdown: {result.MaxDrawdown * 100:F2}%");
+            Console.WriteLine($"- Sharpe Ratio: {result.SharpeRatio:F4}");
+            Console.WriteLine($"- Trading Activity: {result.TradingActivityPercentage:F2}%");
+            if (result.TerminatedEarly)
+            {
+                Console.WriteLine($"- Terminated Early: {result.TerminationReason}");
+            }
+
+            isRunning = false;
+            totalStopwatch.Stop();
+            return;
+        }
+
         Console.WriteLine($"- Total Combinations: {totalCombinations:N0}");
         Console.WriteLine($"- Batch Size: {BatchSize} strategies per backtest");
 
@@ -224,7 +278,9 @@ public class StrategyTester
                     string paramKey = IndicatorCollection.GenerateParameterKey(parameter);
                     if (processedParameters.TryAdd(paramKey, true))
                     {
-                        var strategy = StrategyFactory.CreateStrategy(strategyType, parameter);
+                        // Use the StrategyFactory with the name and directly pass the indicator collection
+                        var strategy = new TradingStrategy(parameter);
+
                         strategies.Add(strategy);
                         parameterKeys.Add(paramKey);
                     }
@@ -259,7 +315,7 @@ public class StrategyTester
                                 }
                             }
                             // Add successful strategies to results
-                            else if (result.NetProfit > 0 && result.WinRate > 0.5)
+                            else if (result.WinRate > 0.50 && result.NetProfit > 0)
                             {
                                 Interlocked.Increment(ref successfulCount);
                                 if (!Results.TryAdd(paramKey, (parameterInstances[i], result)))
@@ -342,8 +398,8 @@ public class StrategyTester
     /// </summary>
     private string GenerateResultFilename()
     {
-        // Format: StrategyType_LookbackDays_TimeFrame_RiskPercentage_MaxConcurrentTrades.json
-        string fileName = $"{strategyType}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}_{backtestOptions.RiskPercentage}R_{backtestOptions.MaxConcurrentTrades}C.json";
+        // Format: StrategyName_LookbackDays_TimeFrame_RiskPercentage_MaxConcurrentTrades.json
+        string fileName = $"{strategyName}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}_{backtestOptions.RiskPercentage}R_{backtestOptions.MaxConcurrentTrades}C.json";
         return fileName;
     }
 
@@ -387,7 +443,8 @@ public class StrategyTester
                     string existingJson = File.ReadAllText(fileName);
                     var jsonOptions = new JsonSerializerOptions
                     {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
                     };
 
                     var existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, jsonOptions);
@@ -427,7 +484,8 @@ public class StrategyTester
             var serializeOptions = new JsonSerializerOptions
             {
                 WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
             };
 
             string json = JsonSerializer.Serialize(testResults, serializeOptions);
@@ -474,7 +532,7 @@ public class StrategyTester
                 progressBar[i + 1] = i < filledWidth ? '◼' : ' ';
             }
 
-            string statusLine = $"\r{new string(progressBar)} {percentage}% ({current:N0}/{totalCombinations:N0}) " + $"Found: {Results.Count:N0}  ";
+            string statusLine = $"\r{new string(progressBar)} {percentage}% ({current:N0}/{totalCombinations:N0}) " + $"Found: {successfulCount:N0}  ";
 
             // Write to console without a newline
             Console.Write(statusLine);
@@ -487,117 +545,57 @@ public class StrategyTester
     }
 
     /// <summary>
-    /// Save the best result to a file
+    /// Load test results from a JSON file and convert them to IndicatorCollections
     /// </summary>
-    private void SaveBestResult((IndicatorCollection Params, BacktestResult Result) bestResult)
+    /// <param name="filename">Optional specific filename to load. If not provided, uses the current configuration filename.</param>
+    /// <returns>List of IndicatorCollection objects loaded from the file</returns>
+    public IndicatorCollection LoadFromJson(string? filename = null)
     {
+        // Use the standard filename format if none provided
+        filename ??= GenerateResultFilename();
+
+        if (!File.Exists(filename))
+        {
+            Console.WriteLine($"Results file not found: {filename}");
+            return new IndicatorCollection();
+        }
+
         try
         {
-            // Create a JSON-friendly result
-            var testResult = new TestResult(bestResult);
-
-            // Generate filename with strategy, lookback days, timeframe, risk, and concurrent trades
-            string fileName = GenerateResultFilename();
-
-            // Check if file exists and compare with new result
-            bool shouldSave = true;
-            if (File.Exists(fileName))
+            // Load and parse the JSON file
+            string json = File.ReadAllText(filename);
+            var jsonOptions = new JsonSerializerOptions
             {
-                try
-                {
-                    // Load existing file
-                    string existingJson = File.ReadAllText(fileName);
-                    var deserializeOptions = new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                    };
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+            };
 
-                    // Try to parse as list first (since we're now always saving as a list)
-                    List<TestResult>? existingResults = null;
+            var results = JsonSerializer.Deserialize<List<TestResult>>(json, jsonOptions);
 
-                    try
-                    {
-                        existingResults = JsonSerializer.Deserialize<List<TestResult>>(existingJson, deserializeOptions);
-
-                        // If parsed as list, compare with best result
-                        if (existingResults != null && existingResults.Count > 0)
-                        {
-                            double existingBestProfit = existingResults.Max(r => r.Result.NetProfit);
-                            double newProfit = bestResult.Result.NetProfit;
-
-                            // Check if new result would make it into the top 10
-                            if (existingResults.Count < 10 || newProfit > existingResults.Min(r => r.Result.NetProfit))
-                            {
-                                // Add the new result and keep only top 10
-                                existingResults.Add(testResult);
-
-                                // Deduplicate and sort
-                                existingResults = existingResults
-                                    .GroupBy(r => new
-                                    {
-                                        NetProfit = Math.Round(r.Result.NetProfit, 2),
-                                        WinRate = Math.Round(r.Result.WinRatePercent, 2),
-                                        TotalTrades = r.Result.TotalTrades
-                                    })
-                                    .Select(g => g.First())
-                                    .OrderByDescending(r => r.Result.NetProfit)
-                                    .Take(10)
-                                    .ToList();
-
-                                // Save the updated list
-                                var saveOptions = new JsonSerializerOptions
-                                {
-                                    WriteIndented = true,
-                                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                                };
-
-                                string json = JsonSerializer.Serialize(existingResults, saveOptions);
-                                File.WriteAllText(fileName, json);
-
-                                // We've already saved, so don't save again
-                                shouldSave = false;
-                            }
-                            else
-                            {
-                                shouldSave = false;
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // If parsing as list fails, continue with shouldSave = true
-                        Console.WriteLine("\nExisting file format is not compatible. Will create new file.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // If there's an error reading the file, proceed with saving
-                    Console.WriteLine($"\nError reading existing file: {ex.Message}. Will overwrite with new result.");
-                    shouldSave = true;
-                }
+            if (results == null || results.Count == 0)
+            {
+                Console.WriteLine($"No results found in file: {filename}");
+                return new IndicatorCollection();
             }
 
-            if (shouldSave)
+            // Convert TestResults to IndicatorCollections
+            var collection = new IndicatorCollection();
+            try
             {
-                // Create a list with the single result
-                var resultsList = new List<TestResult> { testResult };
-
-                // Serialize with indentation for readability
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
-
-                string json = JsonSerializer.Serialize(resultsList, options);
-                File.WriteAllText(fileName, json);
-
-                Console.WriteLine($"\nSaved best result to {fileName}");
+                collection = results[0].ToIndicatorCollection();
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error converting result to indicator collection: {ex.Message}");
+            }
+
+            Console.WriteLine($"Successfully loaded configuration from {filename}");
+            return collection;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"\nError saving best result: {ex.Message}");
+            Console.WriteLine($"Error loading from JSON file: {ex.Message}");
+            return new IndicatorCollection();
         }
     }
 
@@ -620,11 +618,59 @@ public class StrategyTester
         // Display termination reasons if there are any
         if (terminationReasons.Count > 0)
         {
-            Console.WriteLine("\nTermination Reasons:");
-            Console.WriteLine("===================");
-            foreach (var reason in terminationReasons.OrderByDescending(r => r.Value))
+            Console.WriteLine("\nTermination Reasons by Category:");
+            Console.WriteLine("==============================");
+
+            // Group termination reasons by category
+            var groupedReasons = new Dictionary<string, int>();
+            int drawdownCount = 0;
+            int inactivityCount = 0;
+            int otherCount = 0;
+
+            foreach (var reason in terminationReasons)
+            {
+                if (reason.Key.StartsWith("Worsening drawdown") || reason.Key.StartsWith("Extreme drawdown"))
+                {
+                    drawdownCount += reason.Value;
+                }
+                else if (reason.Key.StartsWith("Extended inactivity"))
+                {
+                    inactivityCount += reason.Value;
+                }
+                else
+                {
+                    // Add other reasons without grouping
+                    groupedReasons[reason.Key] = reason.Value;
+                    otherCount += reason.Value;
+                }
+            }
+
+            // Add the grouped reasons
+            if (drawdownCount > 0)
+            {
+                groupedReasons["Drawdown threshold exceeded"] = drawdownCount;
+            }
+
+            if (inactivityCount > 0)
+            {
+                groupedReasons["Extended inactivity periods"] = inactivityCount;
+            }
+
+            // Display the grouped reasons
+            foreach (var reason in groupedReasons.OrderByDescending(r => r.Value))
             {
                 Console.WriteLine($"- {reason.Key}: {reason.Value:N0} strategies ({reason.Value * 100.0 / terminatedEarlyCount:F1}%)");
+            }
+
+            // Show the top 3 specific reasons
+            Console.WriteLine("\nTop Specific Termination Reasons:");
+            Console.WriteLine("================================");
+            int count = 0;
+            foreach (var reason in terminationReasons.OrderByDescending(r => r.Value))
+            {
+                Console.WriteLine($"- {reason.Key}: {reason.Value:N0} strategies");
+                count++;
+                if (count >= 3) break;
             }
         }
 
@@ -661,10 +707,6 @@ public class StrategyTester
         // Save the top results to a file
         if (topResults.Count > 0)
         {
-            // First save just the best result
-            var bestResult = topResults[0];
-            SaveBestResult(bestResult);
-
             // Then save all top 10 results
             SaveTopResults();
         }

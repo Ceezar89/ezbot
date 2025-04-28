@@ -3,7 +3,8 @@ using EzBot.Core.IndicatorParameter;
 
 namespace EzBot.Core.Indicator;
 
-public class Supertrend(SupertrendParameter parameter) : IndicatorBase<SupertrendParameter>(parameter), ITrendIndicator
+public class Supertrend(SupertrendParameter parameter)
+    : IndicatorBase<SupertrendParameter>(parameter), ITrendIndicator
 {
     private readonly List<double> _upperBand = [];
     private readonly List<double> _lowerBand = [];

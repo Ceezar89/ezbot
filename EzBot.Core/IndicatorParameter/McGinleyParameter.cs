@@ -1,7 +1,6 @@
-
 namespace EzBot.Core.IndicatorParameter;
 
-public class McGinleyDynamicParameter : IndicatorParameterBase
+public class McGinleyParameter : IndicatorParameterBase
 {
     private int _period = 14;
 
@@ -46,7 +45,7 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
     }
 
     // Static method to create McGinleyDynamicParameter from binary data
-    public static McGinleyDynamicParameter FromBinary(string name, byte[] data)
+    public static McGinleyParameter FromBinary(string name, byte[] data)
     {
         if (data.Length != 4)
             throw new ArgumentException("Invalid data length for McGinleyDynamicParameter");
@@ -54,12 +53,12 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
         int period = BitConverter.ToInt32(data, 0);
 
         // Name is set by the base constructor via the 'name' parameter passed to this method
-        var param = new McGinleyDynamicParameter(period);
+        var param = new McGinleyParameter(period);
         return param;
     }
 
     // Register the type with the factory method
-    static McGinleyDynamicParameter()
+    static McGinleyParameter()
     {
         // This will be called when the class is first used
         RegisterType();
@@ -68,7 +67,7 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
     private static void RegisterType()
     {
         // Register this type with the factory
-        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => McGinleyDynamicParameter.FromBinary(name, data));
+        IndicatorParameterBase.RegisterParameterType(TYPE_ID, (name, data) => McGinleyParameter.FromBinary(name, data));
     }
 
     public override int GetPermutationCount() => TotalPermutations;
@@ -96,12 +95,12 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
         set => ValidateAndSetValue(ref _period, value, PeriodRange);
     }
 
-    public McGinleyDynamicParameter() : base("mcginley_dynamic")
+    public McGinleyParameter() : base("mcginley")
     {
         Period = PeriodRange.Min;
     }
 
-    public McGinleyDynamicParameter(int period) : base("mcginley_dynamic")
+    public McGinleyParameter(int period) : base("mcginley")
     {
         Period = period;
     }
@@ -114,12 +113,12 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
         return false;
     }
 
-    public override McGinleyDynamicParameter DeepClone()
+    public override McGinleyParameter DeepClone()
     {
-        return new McGinleyDynamicParameter(Period);
+        return new McGinleyParameter(Period);
     }
 
-    public override McGinleyDynamicParameter GetRandomNeighbor(Random random)
+    public override McGinleyParameter GetRandomNeighbor(Random random)
     {
         // Calculate how many steps are possible in the range
         int periodSteps = (PeriodRange.Max - PeriodRange.Min) / PeriodRangeStep + 1;
@@ -127,7 +126,7 @@ public class McGinleyDynamicParameter : IndicatorParameterBase
         // Choose a random step
         var period = PeriodRange.Min + (random.Next(periodSteps) * PeriodRangeStep);
 
-        return new McGinleyDynamicParameter(period);
+        return new McGinleyParameter(period);
     }
 
     public override void Reset()

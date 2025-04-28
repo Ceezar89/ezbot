@@ -1,4 +1,3 @@
-
 namespace EzBot.Core.IndicatorParameter;
 
 public class TrendiloParameter : IndicatorParameterBase
@@ -10,18 +9,18 @@ public class TrendiloParameter : IndicatorParameterBase
     private double _bandMultiplier = 1.0;
 
     // Ranges
-    private static readonly (int Min, int Max) SmoothingRange = (1, 2);
-    private static readonly (int Min, int Max) LookbackRange = (40, 60);
-    private static readonly (double Min, double Max) AlmaOffsetRange = (0.9, 1.0);
-    private static readonly (int Min, int Max) AlmaSigmaRange = (10, 11);
-    private static readonly (double Min, double Max) BandMultiplierRange = (2.0, 2.2);
+    private static readonly (int Min, int Max) SmoothingRange = (1, 6);
+    private static readonly (int Min, int Max) LookbackRange = (50, 250);
+    private static readonly (double Min, double Max) AlmaOffsetRange = (0.8, 1.1);
+    private static readonly (int Min, int Max) AlmaSigmaRange = (1, 7);
+    private static readonly (double Min, double Max) BandMultiplierRange = (1.0, 2.0);
 
     // Steps
-    private const int SmoothingRangeStep = 1;
-    private const int LookbackRangeStep = 10;
+    private const int SmoothingRangeStep = 5;
+    private const int LookbackRangeStep = 50;
     private const double AlmaOffsetRangeStep = 0.1;
     private const int AlmaSigmaRangeStep = 1;
-    private const double BandMultiplierRangeStep = 0.2;
+    private const double BandMultiplierRangeStep = 0.5;
 
     // Correctly calculate the number of steps for each parameter range
     private static readonly int SmoothingPermutations = CalculateSteps(SmoothingRange.Min, SmoothingRange.Max, SmoothingRangeStep);
