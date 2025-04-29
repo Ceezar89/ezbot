@@ -1,12 +1,11 @@
-using System.Collections;
+using EzBot.Core.Strategy;
 using EzBot.Models;
 
 namespace EzBot.Core.Indicator;
 
-public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<IndicatorCollection>
+public class IndicatorCollection
 {
     private readonly List<IIndicator> _indicators;
-    private int? _hashCode;
 
     public IndicatorCollection()
     {
@@ -21,29 +20,81 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
     public void Add(IIndicator indicator)
     {
         _indicators.Add(indicator);
-        InvalidateCache();
-    }
-
-    public bool Remove(IIndicator indicator)
-    {
-        var result = _indicators.Remove(indicator);
-        if (result)
-            InvalidateCache();
-        return result;
     }
 
     public int Count => _indicators.Count;
     public IIndicator this[int index] => _indicators[index];
 
-    public bool CanIncrement()
+    public static List<IndicatorCollection> GenerateAllPermutations(StrategyConfiguration configuration)
     {
-        foreach (IIndicator indicator in _indicators)
+        Dictionary<string, IndicatorCollection> indicatorCollections = [];
+        var collection = configuration.ToIndicatorCollection();
+        collection.Reset();
+
+        // add the first collection to the dictionary
+        string key = GenerateParameterKey(collection);
+        indicatorCollections.Add(key, collection.DeepClone());
+        while (collection.Next())
         {
-            if (indicator.GetParameters().CanIncrement())
+            key = GenerateParameterKey(collection);
+            indicatorCollections.Add(key, collection.DeepClone());
+        }
+        return [.. indicatorCollections.Values];
+    }
+
+    public static string GenerateParameterKey(IndicatorCollection parameters)
+    {
+        // Create a string representation of parameter values
+        var key = new System.Text.StringBuilder();
+
+        foreach (var indicator in parameters)
+        {
+            var indParams = indicator.GetParameters();
+            var props = indParams.GetProperties();
+
+            // Add indicator type to key
+            key.Append(indicator.GetType().Name).Append(':');
+
+            // Add each parameter value to key
+            foreach (var prop in props)
+            {
+                key.Append(prop.Name).Append('=').Append(prop.Value).Append(',');
+            }
+
+            key.Append(';');
+        }
+
+        return key.ToString();
+    }
+
+    // Increments to the next parameter combination
+    public bool Next()
+    {
+        if (_indicators.Count == 0)
+            return false;
+
+        foreach (var indicator in _indicators)
+        {
+            var parameters = indicator.GetParameters();
+            if (parameters.IncrementSingle())
+            {
                 return true;
+            }
+            parameters.Reset();
         }
         return false;
     }
+
+    // Reset the iteration to the beginning
+    public void Reset()
+    {
+        // Reset all indicators to their initial parameter state
+        foreach (IIndicator indicator in _indicators)
+        {
+            indicator.GetParameters().Reset();
+        }
+    }
+
 
     public void UpdateAll(List<BarData> bars)
     {
@@ -61,48 +112,29 @@ public class IndicatorCollection : IEnumerable<IIndicator>, IEquatable<Indicator
         {
             // find the type of the indicator and create a new instance of it
             var type = indicator.GetType();
-            var parameters = indicator.GetParameters();
+            var parameters = indicator.GetParameters().DeepClone();
             // create a new instance of the indicator
             var newIndicator = (IIndicator)Activator.CreateInstance(type, parameters)!;
             cloneList.Add(newIndicator);
         }
-        return [.. cloneList];
+        return new IndicatorCollection(cloneList);
+    }
+
+    // for non brute force optimization
+    public void RandomizeParameters()
+    {
+        Random random = new(Guid.NewGuid().GetHashCode());
+
+        if (_indicators.Count == 0)
+            throw new InvalidOperationException("Cannot randomize parameters for an empty collection");
+
+        foreach (var indicator in _indicators)
+        {
+            var parameters = indicator.GetParameters();
+            var randomNeighbor = parameters.GetRandomNeighbor(random);
+            indicator.UpdateParameters(randomNeighbor);
+        }
     }
 
     public IEnumerator<IIndicator> GetEnumerator() => _indicators.GetEnumerator();
-    IEnumerator IEnumerable.GetEnumerator() => _indicators.GetEnumerator();
-    public override bool Equals(object? obj) => Equals(obj as IndicatorCollection);
-
-    public bool Equals(IndicatorCollection? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        if (Count != other.Count) return false;
-        for (int i = 0; i < _indicators.Count; i++)
-        {
-            if (!_indicators[i].Equals(other._indicators[i]))
-                return false;
-        }
-        return true;
-    }
-
-    public override int GetHashCode()
-    {
-        if (_hashCode.HasValue)
-            return _hashCode.Value;
-
-        var hash = new HashCode();
-        foreach (var indicator in _indicators.OrderBy(i => i.GetType().FullName))
-        {
-            hash.Add(indicator.GetType().FullName);
-            hash.Add(indicator.GetParameters().GetHashCode());
-        }
-        _hashCode = hash.ToHashCode();
-        return _hashCode.Value;
-    }
-
-    public void InvalidateCache()
-    {
-        _hashCode = null;
-    }
 }

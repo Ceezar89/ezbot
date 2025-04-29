@@ -13,6 +13,9 @@ Data/*
 !Data/xrp_data.example.csv
 !Data/parameters.example.json
 
+EzBot.Optimizer/*.json
+TODO.md
+
 # Ignore EFCore migrations folder
 Migrations
 

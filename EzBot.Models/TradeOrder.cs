@@ -11,11 +11,3 @@ public class TradeOrder(double stopLoss, double takeProfit)
         TradeType = tradeType;
     }
 }
-
-public class LongTradeOrder(double stopLoss, double takeProfit) : TradeOrder(TradeType.Long, stopLoss, takeProfit)
-{
-}
-
-public class ShortTradeOrder(double stopLoss, double takeProfit) : TradeOrder(TradeType.Short, stopLoss, takeProfit)
-{
-}

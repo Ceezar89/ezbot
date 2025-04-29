@@ -1,9 +1,8 @@
-
 using System.Text.Json.Serialization;
 
-namespace EzBot.Services.DTO;
+namespace EzBot.Services.Response;
 
-public class MexcKlineResponseDto
+public class MexcKlineResponse
 {
     [JsonPropertyName("success")]
     public bool Success { get; set; }
@@ -12,10 +11,10 @@ public class MexcKlineResponseDto
     public int Code { get; set; }
 
     [JsonPropertyName("data")]
-    public required MexcKlineDataDto Data { get; set; }
+    public required MexcKlineData Data { get; set; }
 }
 
-public class MexcKlineDataDto
+public class MexcKlineData
 {
     [JsonPropertyName("time")]
     public required long[] Time { get; set; }
