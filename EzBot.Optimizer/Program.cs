@@ -18,9 +18,9 @@ strategyConfigurations.Add(new StrategyConfiguration([
     IndicatorType.Trendilo
 ]));
 
-List<TimeFrame> timeFrames = [TimeFrame.OneHour, TimeFrame.ThirtyMinute, TimeFrame.FifteenMinute];
-List<double> riskPercentages = [1.0, 2.0, 3.0];
-List<int> maxConcurrentTrades = [1, 2, 3];
+List<TimeFrame> timeFrames = [TimeFrame.OneHour];
+List<double> riskPercentages = [1.0, 2.0, 3.0, 4.0, 5.0];
+List<int> maxConcurrentTrades = [1, 2, 3, 4, 5];
 
 double initialBalance = 1000;
 double feePercentage = 0.05;
@@ -80,35 +80,28 @@ if (args.Length > 0)
     }
 }
 
-
 try
 {
-    foreach (var maxTrades in maxConcurrentTrades)
+    foreach (var timeFrame in timeFrames)
     {
-        foreach (var riskPercentage in riskPercentages)
+        foreach (var strategyConfiguration in strategyConfigurations)
         {
-            foreach (var timeFrame in timeFrames)
-            {
-                foreach (var strategyConfiguration in strategyConfigurations)
-                {
-                    var tester = new StrategyTester(
-                        dataFilePath: dataFilePath,
-                        strategyConfiguration: strategyConfiguration,
-                        timeFrame: timeFrame,
-                        initialBalance: initialBalance,
-                        feePercentage: feePercentage,
-                        maxConcurrentTrades: maxTrades,
-                        leverage: leverage,
-                        lookbackDays: lookbackDays,
-                        threadCount: threadCount,
-                        maxDrawdown: maxDrawdown,
-                        riskPercentage: riskPercentage,
-                        maxInactivityPercentage: maxInactivityPercentage,
-                        runSavedConfiguration: runSavedConfiguration
-                    );
-                    tester.Test();
-                }
-            }
+            var tester = new StrategyTester(
+                dataFilePath: dataFilePath,
+                strategyConfiguration: strategyConfiguration,
+                timeFrame: timeFrame,
+                initialBalance: initialBalance,
+                feePercentage: feePercentage,
+                maxConcurrentTrades: maxConcurrentTrades,
+                leverage: leverage,
+                lookbackDays: lookbackDays,
+                threadCount: threadCount,
+                maxDrawdown: maxDrawdown,
+                riskPercentage: riskPercentages,
+                maxInactivityPercentage: maxInactivityPercentage,
+                runSavedConfiguration: runSavedConfiguration
+            );
+            tester.Test();
         }
     }
 }

@@ -33,6 +33,7 @@ public class BacktestAccount
     private int winCount;
     private int lossCount;
     private readonly double Risk;
+    private readonly int maxConcurrentTrades;
 
     // Historical balance tracking
     private readonly Dictionary<int, double> balanceHistory = [];
@@ -40,7 +41,7 @@ public class BacktestAccount
     // Trade management - use Dictionary for O(1) lookups by ID instead of list searches
     private readonly Dictionary<int, BacktestTrade> trades;
 
-    public BacktestAccount(BacktestOptions options)
+    public BacktestAccount(BacktestOptions options, double risk, int maxConcurrentTrades)
     {
         _opt = options;
         InitialBalance = options.InitialBalance;
@@ -48,7 +49,8 @@ public class BacktestAccount
         peakBalance = options.InitialBalance;
         FeePercentage = options.FeePercentage;
         Leverage = options.Leverage;
-        Risk = options.RiskPercentage / 100;
+        this.maxConcurrentTrades = maxConcurrentTrades;
+        Risk = risk / 100.0;
 
         // Initialize trade tracking with expected capacity
         trades = new Dictionary<int, BacktestTrade>(100); // Typical backtest capacity
@@ -247,8 +249,8 @@ public class BacktestAccount
             StartUnixTime = StartUnixTime,
             EndUnixTime = EndUnixTime,
             MaxDaysInactive = MaxDaysInactive,
-            RiskPercentage = _opt.RiskPercentage,
-            MaxConcurrentTrades = _opt.MaxConcurrentTrades,
+            RiskPercentage = Risk,
+            MaxConcurrentTrades = maxConcurrentTrades,
             FeePercentage = _opt.FeePercentage,
             Leverage = _opt.Leverage,
             TimeFrame = _opt.TimeFrame,

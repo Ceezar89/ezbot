@@ -20,40 +20,57 @@ public static class Backtest
         if (historicalData.Count <= WarmupPeriod)
             throw new ArgumentException("Not enough data for backtesting");
 
+        // Calculate total number of accounts (strategies × maxConcurrentTrades combinations × riskPercentage combinations)
+        int totalAccounts = strategies.Count * opt.MaxConcurrentTrades.Count * opt.RiskPercentage.Count;
+
         // Initialize result storage
-        var results = new List<BacktestResult>(strategies.Count);
+        var results = new List<BacktestResult>(totalAccounts);
 
-        // Initialize tracking arrays for each strategy
-        var accounts = new BacktestAccount[strategies.Count];
-        var activeOrdersCollection = new Dictionary<int, TradeOrder>[strategies.Count];
-        var lastTradeBarIndices = new int[strategies.Count];
-        var inactiveBarsCounts = new int[strategies.Count]; // Changed from inactiveDaysCounts to inactiveBarsCounts
-        var consecutiveLosses = new int[strategies.Count];
-        var totalTrades = new int[strategies.Count];
-        var peakBalances = new double[strategies.Count];
+        // Initialize tracking arrays for each strategy and maxConcurrentTrades combination
+        var accounts = new BacktestAccount[totalAccounts];
+        var activeOrdersCollection = new Dictionary<int, TradeOrder>[totalAccounts];
+        var lastTradeBarIndices = new int[totalAccounts];
+        var inactiveBarsCounts = new int[totalAccounts];
+        var consecutiveLosses = new int[totalAccounts];
+        var totalTrades = new int[totalAccounts];
+        var peakBalances = new double[totalAccounts];
+        var accountToStrategyMap = new int[totalAccounts]; // Maps account index to strategy index
+        var accountToMaxTradesMap = new int[totalAccounts]; // Maps account index to maxConcurrentTrades index
+        var accountToRiskMap = new int[totalAccounts]; // Maps account index to riskPercentage index
 
-        // Initialize for each strategy
+        // Initialize for each strategy and maxConcurrentTrades and riskPercentage combination
+        int accountIndex = 0;
         for (int s = 0; s < strategies.Count; s++)
         {
-            accounts[s] = new BacktestAccount(opt);
-            activeOrdersCollection[s] = new Dictionary<int, TradeOrder>(opt.MaxConcurrentTrades);
-            lastTradeBarIndices[s] = WarmupPeriod;
-            peakBalances[s] = opt.InitialBalance;
-            accounts[s].StartUnixTime = historicalData[WarmupPeriod].TimeStamp;
+            for (int m = 0; m < opt.MaxConcurrentTrades.Count; m++)
+            {
+                for (int r = 0; r < opt.RiskPercentage.Count; r++)
+                {
+                    accounts[accountIndex] = new BacktestAccount(opt, opt.RiskPercentage[r], opt.MaxConcurrentTrades[m]);
+                    activeOrdersCollection[accountIndex] = new Dictionary<int, TradeOrder>(opt.MaxConcurrentTrades[m]);
+                    lastTradeBarIndices[accountIndex] = WarmupPeriod;
+                    peakBalances[accountIndex] = opt.InitialBalance;
+                    accounts[accountIndex].StartUnixTime = historicalData[WarmupPeriod].TimeStamp;
+                    accountToStrategyMap[accountIndex] = s;
+                    accountToMaxTradesMap[accountIndex] = m;
+                    accountToRiskMap[accountIndex] = r;
+                    accountIndex++;
+                }
+            }
         }
 
         // Pre-allocate collections that are reused in the loop
-        var sortedTradesCollection = new List<(int TradeId, TradeOrder Order, BacktestTrade? Trade)>[strategies.Count];
-        var tradesClosedThisBarCollection = new List<int>[strategies.Count];
+        var sortedTradesCollection = new List<(int TradeId, TradeOrder Order, BacktestTrade? Trade)>[totalAccounts];
+        var tradesClosedThisBarCollection = new List<int>[totalAccounts];
 
-        for (int s = 0; s < strategies.Count; s++)
+        for (int a = 0; a < totalAccounts; a++)
         {
-            sortedTradesCollection[s] = new List<(int TradeId, TradeOrder Order, BacktestTrade? Trade)>(opt.MaxConcurrentTrades);
-            tradesClosedThisBarCollection[s] = new List<int>(opt.MaxConcurrentTrades);
+            int maxTradesIndex = accountToMaxTradesMap[a];
+            sortedTradesCollection[a] = new List<(int TradeId, TradeOrder Order, BacktestTrade? Trade)>(opt.MaxConcurrentTrades[maxTradesIndex]);
+            tradesClosedThisBarCollection[a] = new List<int>(opt.MaxConcurrentTrades[maxTradesIndex]);
         }
 
         // Cache frequently used values
-        int maxConcurrentTrades = opt.MaxConcurrentTrades;
         double maxDrawdown = opt.MaxDrawdown;
         int historicalDataCount = historicalData.Count;
         int lastIndex = historicalDataCount - 1;
@@ -61,8 +78,8 @@ public static class Backtest
         // Calculate max inactivity threshold in bars rather than days
         int maxInactiveBars = (int)(historicalDataCount * opt.MaxInactivityPercentage);
 
-        // Track which strategies are still active (haven't been terminated early)
-        var activeStrategies = Enumerable.Range(0, strategies.Count).ToList();
+        // Track which accounts are still active (haven't been terminated early)
+        var activeAccounts = Enumerable.Range(0, totalAccounts).ToList();
 
         // Create a reusable buffer array/list outside the loop
         var dataBuffer = new List<BarData>(100);
@@ -72,20 +89,24 @@ public static class Backtest
         {
             var currentBar = historicalData[i];
 
-            // Process each active strategy
-            for (int sIndex = activeStrategies.Count - 1; sIndex >= 0; sIndex--)
+            // Process each active account
+            for (int aIndex = activeAccounts.Count - 1; aIndex >= 0; aIndex--)
             {
-                int s = activeStrategies[sIndex];
+                int a = activeAccounts[aIndex];
+                int s = accountToStrategyMap[a];
+                int maxTradesIndex = accountToMaxTradesMap[a];
+                int maxConcurrentTrades = opt.MaxConcurrentTrades[maxTradesIndex];
+
                 var strategy = strategies[s];
-                var account = accounts[s];
-                var activeOrders = activeOrdersCollection[s];
+                var account = accounts[a];
+                var activeOrders = activeOrdersCollection[a];
 
                 account.EndUnixTime = currentBar.TimeStamp;
                 bool hadTradeActivity = false;
 
                 // Clear collections
-                var sortedTrades = sortedTradesCollection[s];
-                var tradesClosedThisBar = tradesClosedThisBarCollection[s];
+                var sortedTrades = sortedTradesCollection[a];
+                var tradesClosedThisBar = tradesClosedThisBarCollection[a];
                 sortedTrades.Clear();
                 tradesClosedThisBar.Clear();
 
@@ -131,15 +152,15 @@ public static class Backtest
                             {
                                 account.ClosePosition(tradeId, stopLoss, i);
                                 closed = true;
-                                consecutiveLosses[s]++;
-                                totalTrades[s]++;
+                                consecutiveLosses[a]++;
+                                totalTrades[a]++;
                             }
                             else if (currentHigh >= takeProfit)
                             {
                                 account.ClosePosition(tradeId, takeProfit, i);
                                 closed = true;
-                                consecutiveLosses[s] = 0;
-                                totalTrades[s]++;
+                                consecutiveLosses[a] = 0;
+                                totalTrades[a]++;
                             }
                         }
                         else if (order.TradeType == TradeType.Short)
@@ -148,15 +169,15 @@ public static class Backtest
                             {
                                 account.ClosePosition(tradeId, stopLoss, i);
                                 closed = true;
-                                consecutiveLosses[s]++;
-                                totalTrades[s]++;
+                                consecutiveLosses[a]++;
+                                totalTrades[a]++;
                             }
                             else if (currentLow <= takeProfit)
                             {
                                 account.ClosePosition(tradeId, takeProfit, i);
                                 closed = true;
-                                consecutiveLosses[s] = 0;
-                                totalTrades[s]++;
+                                consecutiveLosses[a] = 0;
+                                totalTrades[a]++;
                             }
                         }
 
@@ -198,7 +219,7 @@ public static class Backtest
                                 currentBar.Close, tradeOrder.StopLoss, i);
                             activeOrders.Add(tradeId, tradeOrder);
 
-                            lastTradeBarIndices[s] = i;
+                            lastTradeBarIndices[a] = i;
                             hadTradeActivity = true;
                         }
                     }
@@ -212,28 +233,28 @@ public static class Backtest
                 // Update inactivity tracking - now in bars instead of days
                 if (hadTradeActivity)
                 {
-                    inactiveBarsCounts[s] = 0;
-                    lastTradeBarIndices[s] = i;
+                    inactiveBarsCounts[a] = 0;
+                    lastTradeBarIndices[a] = i;
                 }
                 else if (activeOrders.Count > 0)
                 {
-                    inactiveBarsCounts[s] = 0;
-                    lastTradeBarIndices[s] = i;
+                    inactiveBarsCounts[a] = 0;
+                    lastTradeBarIndices[a] = i;
                 }
                 else
                 {
-                    inactiveBarsCounts[s] = i - lastTradeBarIndices[s];
+                    inactiveBarsCounts[a] = i - lastTradeBarIndices[a];
                 }
 
                 // Update account metrics
-                account.MaxDaysInactive = inactiveBarsCounts[s]; // This will store bars now, not days
+                account.MaxDaysInactive = inactiveBarsCounts[a]; // This will store bars now, not days
 
                 // Calculate current drawdown
                 double currentBalance = account.CurrentBalance;
-                if (currentBalance > peakBalances[s])
-                    peakBalances[s] = currentBalance;
+                if (currentBalance > peakBalances[a])
+                    peakBalances[a] = currentBalance;
 
-                double currentDrawdown = (peakBalances[s] - currentBalance) / peakBalances[s];
+                double currentDrawdown = (peakBalances[a] - currentBalance) / peakBalances[a];
                 account.UpdateMaxDrawdown(currentDrawdown);
 
                 // Early termination check for obviously poor strategies
@@ -250,7 +271,7 @@ public static class Backtest
                     if (lookbackBars > 10 && currentDrawdown > adjustedMaxDrawdown * 0.7)
                     {
                         int previousBarIndex = i - lookbackBars;
-                        double previousBalanceRatio = account.GetHistoricalBalance(previousBarIndex) / peakBalances[s];
+                        double previousBalanceRatio = account.GetHistoricalBalance(previousBarIndex) / peakBalances[a];
                         double previousDrawdown = 1.0 - previousBalanceRatio;
 
                         if (currentDrawdown > adjustedMaxDrawdown && currentDrawdown > previousDrawdown * 1.05)
@@ -264,10 +285,10 @@ public static class Backtest
                     }
 
                     double adjustedMaxInactivityBars = maxInactiveBars * (1.0 + 0.5 * (1.0 - progressFactor));
-                    if (inactiveBarsCounts[s] > adjustedMaxInactivityBars)
+                    if (inactiveBarsCounts[a] > adjustedMaxInactivityBars)
                     {
-                        double inactivityPercentage = (double)inactiveBarsCounts[s] / i * 100;
-                        terminationReason = $"Extended inactivity: {inactiveBarsCounts[s]} bars ({inactivityPercentage:F1}%) > {adjustedMaxInactivityBars:F1} bars";
+                        double inactivityPercentage = (double)inactiveBarsCounts[a] / i * 100;
+                        terminationReason = $"Extended inactivity: {inactiveBarsCounts[a]} bars ({inactivityPercentage:F1}%) > {adjustedMaxInactivityBars:F1} bars";
                     }
 
                     if (!string.IsNullOrEmpty(terminationReason))
@@ -277,24 +298,24 @@ public static class Backtest
                         earlyTerminationResult.TerminationReason = terminationReason;
 
                         results.Add(earlyTerminationResult);
-                        activeStrategies.RemoveAt(sIndex);
+                        activeAccounts.RemoveAt(aIndex);
                     }
                 }
             }
 
-            // If no strategies left active, we can exit early
-            if (activeStrategies.Count == 0)
+            // If no accounts left active, we can exit early
+            if (activeAccounts.Count == 0)
                 break;
         }
 
-        // Process remaining active strategies
+        // Process remaining active accounts
         var lastBar = historicalData[lastIndex];
 
-        foreach (int s in activeStrategies)
+        foreach (int a in activeAccounts)
         {
-            var account = accounts[s];
-            var activeOrders = activeOrdersCollection[s];
-            var sortedTrades = sortedTradesCollection[s];
+            var account = accounts[a];
+            var activeOrders = activeOrdersCollection[a];
+            var sortedTrades = sortedTradesCollection[a];
 
             if (activeOrders.Count > 0)
             {
