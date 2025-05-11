@@ -3,15 +3,26 @@ using EzBot.Common;
 using EzBot.Services.Response;
 using System.Text.Json;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace EzBot.Services.Exchange;
 
-public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeService
+public class BinanceExchangeService : ICryptoExchangeService
 {
-    private readonly HttpClient _httpClient = httpClient;
+    private readonly HttpClient _httpClient;
     private readonly BinanceAdapter _adapter = new();
     private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
     public static ExchangeName ExchangeName => ExchangeName.BINANCE;
+
+    public string? ApiSecret { get; set; }
+
+    public BinanceExchangeService(HttpClient httpClient, string? apiSecret = null, bool useTestnet = false)
+    {
+        _httpClient = httpClient;
+        ApiSecret = apiSecret;
+        _adapter.UseTestnet = useTestnet;
+    }
 
     // https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
     public async Task<List<BarData>> GetBarDataAsync(CoinPair symbol, Interval interval, CancellationToken cancellationToken)
@@ -75,14 +86,17 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
             };
 
-            // TODO: When implementing with actual API keys, add security parameters:
-            // - API Key (X-MBX-APIKEY header)
-            // - Signature (HMAC SHA256)
-
             // Build query string from parameters
             var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
 
-            // Use the test endpoint for testing purposes, in production this would be controlled by a config setting
+            // Add signature if ApiSecret is provided
+            if (!string.IsNullOrEmpty(ApiSecret))
+            {
+                var signature = GenerateSignature(queryString, ApiSecret);
+                queryString = $"{queryString}&signature={signature}";
+            }
+
+            // Get the endpoint for order operations
             var endpoint = _adapter.GetTestOrderEndpoint();
 
             // Create and send request
@@ -92,6 +106,7 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
                 RequestUri = new Uri($"{endpoint}?{queryString}")
             };
 
+            Console.WriteLine($"Making request to {request.RequestUri}");
             var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -102,7 +117,16 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
 
             // Parse response to BinanceOrderResponse object
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.WriteLine($"Response from Binance: {responseContent}");
+
+            // For real orders, try to get the order ID
             var orderResponse = JsonSerializer.Deserialize<EzBot.Services.Response.BinanceOrderResponse>(responseContent, _jsonOptions);
+
+            // Log order details
+            if (orderResponse != null)
+            {
+                Console.WriteLine($"Order created: ID={orderResponse.OrderId}, ClientOrderId={orderResponse.ClientOrderId}, Status={orderResponse.Status}");
+            }
 
             // Check if the order was successfully created
             return orderResponse?.OrderId > 0;
@@ -112,6 +136,28 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
             // Log error
             Console.WriteLine($"Error executing trade: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Generate HMAC SHA256 signature for API request
+    /// </summary>
+    private static string GenerateSignature(string queryString, string apiSecret)
+    {
+        try
+        {
+            var key = Encoding.UTF8.GetBytes(apiSecret);
+            var message = Encoding.UTF8.GetBytes(queryString);
+
+            using var hmac = new HMACSHA256(key);
+            var hash = hmac.ComputeHash(message);
+
+            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating signature: {ex.Message}");
+            throw;
         }
     }
 
@@ -172,140 +218,152 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
     /// <returns>True if successful, false otherwise</returns>
     public async Task<bool> ChangeLeverageAsync(string symbol, int leverage, CancellationToken cancellationToken)
     {
+        // Create a single-attempt function with fresh timestamp
+        async Task<HttpResponseMessage> MakeSingleRequest()
+        {
+            try
+            {
+                // Create parameters with a fresh timestamp each time
+                var parameters = new Dictionary<string, string>
+                {
+                    ["symbol"] = symbol,
+                    ["leverage"] = leverage.ToString(),
+                    ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+                    ["recvWindow"] = "5000" // Allow 5 seconds window for request processing
+                };
+
+                var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
+
+                // Add signature if ApiSecret is provided
+                if (!string.IsNullOrEmpty(ApiSecret))
+                {
+                    var signature = GenerateSignature(queryString, ApiSecret);
+                    queryString = $"{queryString}&signature={signature}";
+                }
+
+                var endpoint = _adapter.GetLeverageEndpoint();
+
+                var request = new HttpRequestMessage
+                {
+                    Method = HttpMethod.Post,
+                    RequestUri = new Uri($"{endpoint}?{queryString}")
+                };
+
+                Console.WriteLine($"Making leverage request to {request.RequestUri}");
+                return await _httpClient.SendAsync(request, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in request: {ex.Message}");
+                throw;
+            }
+        }
+
+        // Implement our own retry logic with fresh timestamps
+        HttpResponseMessage? response = null;
+        var maxRetries = 3;
+
+        for (int retry = 0; retry <= maxRetries; retry++)
+        {
+            if (retry > 0)
+            {
+                Console.WriteLine($"Retrying leverage change... Attempt {retry}");
+                // Add exponential backoff
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retry)), cancellationToken);
+            }
+
+            try
+            {
+                response = await MakeSingleRequest();
+
+                // Success case - no need to retry
+                if (response.IsSuccessStatusCode)
+                {
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (retry == maxRetries)
+                {
+                    Console.WriteLine($"Max retries exceeded: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        if (response == null)
+        {
+            return false;
+        }
+
         try
         {
-            var parameters = new Dictionary<string, string>
-            {
-                ["symbol"] = symbol,
-                ["leverage"] = leverage.ToString(),
-                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
-            };
-
-            var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
-            var endpoint = _adapter.GetLeverageEndpoint();
-
-            var request = new HttpRequestMessage
-            {
-                Method = HttpMethod.Post,
-                RequestUri = new Uri($"{endpoint}?{queryString}")
-            };
-
-            var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
+            // Read the response content
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.WriteLine($"Leverage response from Binance: {responseContent}");
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                Console.WriteLine($"Failed to change leverage on Binance: {response.StatusCode}, Error: {errorContent}");
+                Console.WriteLine($"Failed to change leverage on Binance: {response.StatusCode}");
+                // Some error responses may have a JSON structure
+                try
+                {
+                    var errorResponse = JsonSerializer.Deserialize<BinanceGenericResponse>(responseContent, _jsonOptions);
+                    if (errorResponse != null)
+                    {
+                        Console.WriteLine($"Error code: {errorResponse.Code}, Message: {errorResponse.Message}");
+
+                        // Special case: If current leverage is already what we're trying to set
+                        if (errorResponse.Message.Contains("already"))
+                        {
+                            Console.WriteLine($"Leverage is already set to {leverage} - considering this a success");
+                            return true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to parse error response: {ex.Message}");
+                }
+
                 return false;
             }
 
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var leverageResponse = JsonSerializer.Deserialize<EzBot.Services.Response.BinanceLeverageResponse>(responseContent, _jsonOptions);
-
+            // Success case
+            var leverageResponse = JsonSerializer.Deserialize<BinanceLeverageResponse>(responseContent, _jsonOptions);
             return leverageResponse?.Leverage == leverage;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error changing leverage: {ex.Message}");
+            Console.WriteLine($"Error processing response: {ex.Message}");
             return false;
         }
     }
 
     /// <summary>
-    /// Change the margin type for a specific symbol (ISOLATED or CROSSED)
+    /// Change the margin type for a specific symbol (ISOLATED or CROSSED) - Not implemented
     /// </summary>
     /// <param name="symbol">Trading pair symbol</param>
     /// <param name="marginType">Margin type (ISOLATED or CROSSED)</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if successful, false otherwise</returns>
+    /// <returns>False (Not implemented)</returns>
     public async Task<bool> ChangeMarginTypeAsync(string symbol, string marginType, CancellationToken cancellationToken)
     {
-        try
-        {
-            // Always ensure we're using ISOLATED as per requirements
-            var effectiveMarginType = _adapter.MapMarginType(marginType);
-
-            var parameters = new Dictionary<string, string>
-            {
-                ["symbol"] = symbol,
-                ["marginType"] = effectiveMarginType,
-                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
-            };
-
-            var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
-            var endpoint = _adapter.GetMarginTypeEndpoint();
-
-            var request = new HttpRequestMessage
-            {
-                Method = HttpMethod.Post,
-                RequestUri = new Uri($"{endpoint}?{queryString}")
-            };
-
-            var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                Console.WriteLine($"Failed to change margin type on Binance: {response.StatusCode}, Error: {errorContent}");
-                return false;
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var marginTypeResponse = JsonSerializer.Deserialize<EzBot.Services.Response.BinanceMarginTypeResponse>(responseContent, _jsonOptions);
-
-            return marginTypeResponse?.Code == 200;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error changing margin type: {ex.Message}");
-            return false;
-        }
+        Console.WriteLine("ChangeMarginTypeAsync is not implemented");
+        return await Task.FromResult(false);
     }
 
     /// <summary>
-    /// Change the position mode (Dual or Hedge)
+    /// Change the position mode (Dual or Hedge) - Not implemented
     /// </summary>
     /// <param name="dualSidePosition">True for Hedge Mode (dual), False for One-way Mode</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if successful, false otherwise</returns>
+    /// <returns>False (Not implemented)</returns>
     public async Task<bool> ChangePositionModeAsync(bool dualSidePosition, CancellationToken cancellationToken)
     {
-        try
-        {
-            var parameters = new Dictionary<string, string>
-            {
-                ["dualSidePosition"] = dualSidePosition.ToString().ToLowerInvariant(),
-                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
-            };
-
-            var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
-            var endpoint = _adapter.GetPositionModeEndpoint();
-
-            var request = new HttpRequestMessage
-            {
-                Method = HttpMethod.Post,
-                RequestUri = new Uri($"{endpoint}?{queryString}")
-            };
-
-            var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                Console.WriteLine($"Failed to change position mode on Binance: {response.StatusCode}, Error: {errorContent}");
-                return false;
-            }
-
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var positionModeResponse = JsonSerializer.Deserialize<EzBot.Services.Response.BinancePositionModeResponse>(responseContent, _jsonOptions);
-
-            return positionModeResponse?.Code == 200;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error changing position mode: {ex.Message}");
-            return false;
-        }
+        Console.WriteLine("ChangePositionModeAsync is not implemented");
+        return await Task.FromResult(false);
     }
 
     /// <summary>
@@ -420,14 +478,24 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
             }
 
             var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
+
+            // Add signature if ApiSecret is provided
+            if (!string.IsNullOrEmpty(ApiSecret))
+            {
+                var signature = GenerateSignature(queryString, ApiSecret);
+                queryString = $"{queryString}&signature={signature}";
+            }
+
             var endpoint = _adapter.GetPositionInfoEndpoint();
 
+            // Create and send request
             var request = new HttpRequestMessage
             {
                 Method = HttpMethod.Get,
                 RequestUri = new Uri($"{endpoint}?{queryString}")
             };
 
+            Console.WriteLine($"Making position request to {request.RequestUri}");
             var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -438,6 +506,7 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
             }
 
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.WriteLine($"Position response from Binance: {responseContent}");
             var positions = JsonSerializer.Deserialize<List<EzBot.Services.Response.BinancePositionInfoResponse>>(responseContent, _jsonOptions);
 
             return positions;
@@ -464,14 +533,24 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
             };
 
             var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
+
+            // Add signature if ApiSecret is provided
+            if (!string.IsNullOrEmpty(ApiSecret))
+            {
+                var signature = GenerateSignature(queryString, ApiSecret);
+                queryString = $"{queryString}&signature={signature}";
+            }
+
             var endpoint = _adapter.GetAccountBalanceEndpoint();
 
+            // Create and send request
             var request = new HttpRequestMessage
             {
                 Method = HttpMethod.Get,
                 RequestUri = new Uri($"{endpoint}?{queryString}")
             };
 
+            Console.WriteLine($"Making balance request to {request.RequestUri}");
             var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -482,6 +561,7 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
             }
 
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.WriteLine($"Balance response from Binance: {responseContent}");
             var balances = JsonSerializer.Deserialize<List<EzBot.Services.Response.BinanceAccountBalanceResponse>>(responseContent, _jsonOptions);
 
             return balances;
@@ -490,6 +570,66 @@ public class BinanceExchangeService(HttpClient httpClient) : ICryptoExchangeServ
         {
             Console.WriteLine($"Error getting account balance: {ex.Message}");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Get all open orders for a symbol
+    /// </summary>
+    /// <param name="symbol">Trading pair symbol</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of open orders</returns>
+    public async Task<List<BinanceOpenOrdersResponse>> GetOpenOrdersAsync(string symbol, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                ["symbol"] = symbol,
+                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+            };
+
+            // Build query string from parameters
+            var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={p.Value}"));
+
+            // Add signature if ApiSecret is provided
+            if (!string.IsNullOrEmpty(ApiSecret))
+            {
+                var signature = GenerateSignature(queryString, ApiSecret);
+                queryString = $"{queryString}&signature={signature}";
+            }
+
+            // Get the endpoint for open orders
+            var endpoint = _adapter.GetOpenOrdersEndpoint();
+
+            // Create and send request
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Get,
+                RequestUri = new Uri($"{endpoint}?{queryString}")
+            };
+
+            Console.WriteLine($"Making request to {request.RequestUri}");
+            var response = await NetworkUtility.MakeRequestAsync(_httpClient, request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"Failed to get open orders from Binance: {response.StatusCode}, Error: {errorContent}");
+                return new List<BinanceOpenOrdersResponse>();
+            }
+
+            // Parse response to a list of BinanceOpenOrdersResponse objects
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.WriteLine($"Response from Binance: {responseContent}");
+
+            var openOrders = JsonSerializer.Deserialize<List<BinanceOpenOrdersResponse>>(responseContent, _jsonOptions);
+            return openOrders ?? new List<BinanceOpenOrdersResponse>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting open orders: {ex.Message}");
+            return new List<BinanceOpenOrdersResponse>();
         }
     }
 }

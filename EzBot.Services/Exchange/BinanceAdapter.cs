@@ -4,12 +4,15 @@ namespace EzBot.Services.Exchange;
 
 public class BinanceAdapter : ExchangeAdapterBase
 {
+    // Add a flag to control whether to use testnet
+    public bool UseTestnet { get; set; } = false;
+
     // Override abstract properties with Binance-specific values
-    protected override string BaseUrl => "https://fapi.binance.com";
+    protected override string BaseUrl => UseTestnet ? BaseUrlTestNet : "https://fapi.binance.com";
     private string BaseUrlTestNet { get; } = "https://testnet.binancefuture.com";
     protected override string KlineEndpoint => "/fapi/v1/klines";
     protected override string OrderEndpoint => "/fapi/v1/order";
-    protected override string TestOrderEndpoint => "/fapi/v1/order/test";
+    protected override string TestOrderEndpoint => "/fapi/v1/order/test"; // Not used anymore - keeping for compatibility
     protected override string QueryOrderEndpoint => "/fapi/v1/order";
     protected override string CancelOrderEndpoint => "/fapi/v1/order";
     protected override string CancelAllOrdersEndpoint => "/fapi/v1/allOpenOrders";
@@ -18,6 +21,7 @@ public class BinanceAdapter : ExchangeAdapterBase
     protected override string PositionModeEndpoint => "/fapi/v1/positionSide/dual";
     protected override string PositionInfoEndpoint => "/fapi/v3/positionRisk";
     protected override string AccountBalanceEndpoint => "/fapi/v3/balance";
+    protected string OpenOrdersEndpoint => "/fapi/v1/openOrders";
 
     // Override mapping methods
     protected override string MapSymbol(CoinPair symbol) => symbol switch
@@ -41,8 +45,8 @@ public class BinanceAdapter : ExchangeAdapterBase
         _ => throw new ArgumentOutOfRangeException(nameof(interval))
     };
 
-    // Override the test endpoint method to use the testnet URL
-    public override string GetTestOrderEndpoint() => $"{BaseUrlTestNet}{TestOrderEndpoint}";
+    // Override the test endpoint method to use real order endpoint
+    public override string GetTestOrderEndpoint() => $"{BaseUrl}{OrderEndpoint}";
 
     public override string MapTradeType(TradeType tradeType) => tradeType switch
     {
@@ -59,4 +63,6 @@ public class BinanceAdapter : ExchangeAdapterBase
         "CROSSED" => "CROSSED",
         _ => "ISOLATED" // Default to isolated as per requirements
     };
+
+    public string GetOpenOrdersEndpoint() => $"{BaseUrl}{OpenOrdersEndpoint}";
 }
