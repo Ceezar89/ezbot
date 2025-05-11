@@ -10,16 +10,44 @@ List<StrategyConfiguration> strategyConfigurations = [];
 // Add your strategy configurations here
 strategyConfigurations.Add(new StrategyConfiguration([
     IndicatorType.Etma,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi,
     IndicatorType.Trendilo
 ]));
 
 strategyConfigurations.Add(new StrategyConfiguration([
     IndicatorType.McGinley,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi,
     IndicatorType.Trendilo
 ]));
 
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.Etma,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Trendilo
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.McGinley,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Trendilo
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.Etma,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.McGinley,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi
+]));
+
 List<TimeFrame> timeFrames = [TimeFrame.OneHour];
-List<double> riskPercentages = [1.0, 2.0, 3.0, 4.0, 5.0];
+List<double> riskPercentages = [1.0, 2.0, 3.0];
 List<int> maxConcurrentTrades = [1, 2, 3, 4, 5];
 
 double initialBalance = 1000;
@@ -27,7 +55,7 @@ double feePercentage = 0.05;
 double maxDrawdown = 0.3;
 int lookbackDays = 1500;
 int leverage = 10;
-int threadCount = 0;
+int threadCount = -1;
 bool runSavedConfiguration = false;
 double maxInactivityPercentage = 0.05;
 
@@ -80,28 +108,42 @@ if (args.Length > 0)
     }
 }
 
+int totalProgressCount = strategyConfigurations.Count * riskPercentages.Count * timeFrames.Count * maxConcurrentTrades.Count;
+int currentProgress = 0;
+
 try
 {
-    foreach (var timeFrame in timeFrames)
+    foreach (var maxTrades in maxConcurrentTrades)
     {
-        foreach (var strategyConfiguration in strategyConfigurations)
+        foreach (var riskPercentage in riskPercentages)
         {
-            var tester = new StrategyTester(
-                dataFilePath: dataFilePath,
-                strategyConfiguration: strategyConfiguration,
-                timeFrame: timeFrame,
-                initialBalance: initialBalance,
-                feePercentage: feePercentage,
-                maxConcurrentTrades: maxConcurrentTrades,
-                leverage: leverage,
-                lookbackDays: lookbackDays,
-                threadCount: threadCount,
-                maxDrawdown: maxDrawdown,
-                riskPercentage: riskPercentages,
-                maxInactivityPercentage: maxInactivityPercentage,
-                runSavedConfiguration: runSavedConfiguration
-            );
-            tester.Test();
+            foreach (var timeFrame in timeFrames)
+            {
+                foreach (var strategyConfiguration in strategyConfigurations)
+                {
+                    // Print total progress count
+                    Console.WriteLine($"================================================");
+                    Console.WriteLine($"Current progress: {++currentProgress}/{totalProgressCount}");
+                    Console.WriteLine($"================================================");
+
+                    var tester = new StrategyTester(
+                        dataFilePath: dataFilePath,
+                        strategyConfiguration: strategyConfiguration,
+                        timeFrame: timeFrame,
+                        initialBalance: initialBalance,
+                        feePercentage: feePercentage,
+                        maxConcurrentTrades: maxTrades,
+                        leverage: leverage,
+                        lookbackDays: lookbackDays,
+                        threadCount: threadCount,
+                        maxDrawdown: maxDrawdown,
+                        riskPercentage: riskPercentage,
+                        maxInactivityPercentage: maxInactivityPercentage,
+                        runSavedConfiguration: runSavedConfiguration
+                    );
+                    tester.Test();
+                }
+            }
         }
     }
 }

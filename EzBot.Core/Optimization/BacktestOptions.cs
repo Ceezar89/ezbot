@@ -10,21 +10,11 @@ public class BacktestOptions
     public TimeFrame TimeFrame { get; set; } = TimeFrame.OneHour;
     public int LookbackDays { get; set; } = 1500;
     public double MaxDrawdown { get; set; } = 0.3;
-    public List<int> MaxConcurrentTrades { get; set; } = [1];
-    public List<double> RiskPercentage { get; set; } = [1.0];
+    public int MaxConcurrentTrades { get; set; } = 1;
+    public double RiskPercentage { get; set; } = 1.0;
     public double MaxInactivityPercentage { get; set; } = 0.05;
 
-    public BacktestOptions(
-        double initialBalance,
-        double feePercentage,
-        int leverage,
-        TimeFrame timeFrame,
-        int lookbackDays,
-        double maxDrawdown,
-        List<int>? maxConcurrentTrades,
-        List<double>? riskPercentage,
-        double maxInactivityPercentage
-    )
+    public BacktestOptions(double initialBalance, double feePercentage, int leverage, TimeFrame timeFrame, int lookbackDays, double maxDrawdown, int maxConcurrentTrades, double riskPercentage, double maxInactivityPercentage)
     {
         InitialBalance = initialBalance;
         FeePercentage = feePercentage;
@@ -32,8 +22,8 @@ public class BacktestOptions
         TimeFrame = timeFrame;
         LookbackDays = lookbackDays;
         MaxDrawdown = maxDrawdown;
-        MaxConcurrentTrades = maxConcurrentTrades ?? [1];
-        RiskPercentage = riskPercentage ?? [1.0];
+        MaxConcurrentTrades = maxConcurrentTrades;
+        RiskPercentage = riskPercentage;
         MaxInactivityPercentage = maxInactivityPercentage;
     }
 }

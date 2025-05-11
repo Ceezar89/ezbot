@@ -9,6 +9,10 @@ using System.Text.Json.Serialization;
 
 namespace EzBot.Core.Optimization;
 
+/// <summary>
+/// Tests trading strategies using brute-force parameter optimization.
+/// Generates parameter combinations sequentially and distributes them to worker threads.
+/// </summary>
 public class StrategyTester
 {
     // Core configuration
@@ -20,6 +24,7 @@ public class StrategyTester
     private readonly bool runSavedConfiguration;
     private readonly double maxInactivityPercentage;
 
+    // State tracking with improved concurrency
     // Use dictionary to track results with unique parameter configurations
     private readonly ConcurrentDictionary<string, (IndicatorCollection Params, BacktestResult Result)> Results = new();
     // Shared parameter cache to prevent duplicate backtesting across threads
@@ -43,7 +48,6 @@ public class StrategyTester
 
     // Total number of parameter combinations to test
     private readonly long totalCombinations;
-    private readonly int totalVariationsPerStrategy;
 
     // Batching for improved cache locality
     private const int BatchSize = 30;
@@ -54,12 +58,12 @@ public class StrategyTester
         TimeFrame timeFrame = TimeFrame.OneHour,
         double initialBalance = 1000,
         double feePercentage = 0.05,
-        List<int>? maxConcurrentTrades = null,
+        int maxConcurrentTrades = 5,
         int leverage = 10,
         int lookbackDays = 1500,
         int threadCount = -1,
         double maxDrawdown = 0.5,
-        List<double>? riskPercentage = null,
+        double riskPercentage = 1.0,
         double maxInactivityPercentage = 0.05,
         bool runSavedConfiguration = false
     )
@@ -86,13 +90,10 @@ public class StrategyTester
             timeFrame,
             lookbackDays,
             maxDrawdown,
-            maxConcurrentTrades ?? [1],
-            riskPercentage ?? [1.0],
+            maxConcurrentTrades,
+            riskPercentage,
             maxInactivityPercentage
         );
-
-        // Calculate total variations per strategy
-        totalVariationsPerStrategy = backtestOptions.MaxConcurrentTrades.Count * backtestOptions.RiskPercentage.Count;
 
         // Load and prepare historical data - do this once upfront
         historicalData = LoadAndPrepareData(dataFilePath, lookbackDays, timeFrame);
@@ -103,7 +104,7 @@ public class StrategyTester
         }
 
         allPermutations = [.. IndicatorCollection.GenerateAllPermutations(strategyConfiguration)];
-        totalCombinations = allPermutations.Count * totalVariationsPerStrategy;
+        totalCombinations = allPermutations.Count;
 
         Console.WriteLine();
 
@@ -114,6 +115,10 @@ public class StrategyTester
         }
     }
 
+
+    /// <summary>
+    /// Loads and prepares the historical data - extracted to a method to improve readability
+    /// </summary>
     private static List<BarData> LoadAndPrepareData(string dataFilePath, int lookbackDays, TimeFrame timeFrame)
     {
         // Load historical data
@@ -130,6 +135,9 @@ public class StrategyTester
         return TimeFrameUtility.ConvertTimeFrame(data, timeFrame);
     }
 
+    /// <summary>
+    /// Start testing all parameter combinations across multiple threads
+    /// </summary>
     public void Test()
     {
         if (isRunning)
@@ -142,14 +150,14 @@ public class StrategyTester
         Console.WriteLine($"- Worker Thread Count: {threadCount}");
         Console.WriteLine($"- Data Points: {historicalData.Count:N0}");
         Console.WriteLine($"- Time Frame: {backtestOptions.TimeFrame}");
-        Console.WriteLine($"- Max Concurrent Trades: {string.Join(", ", backtestOptions.MaxConcurrentTrades)}");
-        Console.WriteLine($"- Risk Percentage: {string.Join(", ", backtestOptions.RiskPercentage)}");
+        Console.WriteLine($"- Max Concurrent Trades: {backtestOptions.MaxConcurrentTrades}");
         Console.WriteLine($"- Max Drawdown: {backtestOptions.MaxDrawdown * 100:F0}%");
         Console.WriteLine($"- Lookback Window: {backtestOptions.LookbackDays} days");
         Console.WriteLine($"- Max Inactivity Percentage: {maxInactivityPercentage * 100:F0}%");
         Console.WriteLine($"- Initial Balance: ${backtestOptions.InitialBalance:F2}");
         Console.WriteLine($"- Fee Percentage: {backtestOptions.FeePercentage:F2}%");
         Console.WriteLine($"- Leverage: {backtestOptions.Leverage}x");
+        Console.WriteLine($"- Risk Percentage: {backtestOptions.RiskPercentage:F2}%");
 
         // Handle loading and testing a saved configuration if the flag is set
         if (runSavedConfiguration)
@@ -195,7 +203,6 @@ public class StrategyTester
         }
 
         Console.WriteLine($"- Total Combinations: {totalCombinations:N0}");
-        Console.WriteLine($"- Variations per Strategy: {totalVariationsPerStrategy}");
         Console.WriteLine($"- Batch Size: {BatchSize} strategies per backtest");
 
         // Start UI thread for progress display
@@ -235,6 +242,9 @@ public class StrategyTester
         ShowFinalStats();
     }
 
+    /// <summary>
+    /// Worker thread that processes parameter combinations in batches for better performance
+    /// </summary>
     private void ProcessParameters()
     {
         while (true)
@@ -287,8 +297,7 @@ public class StrategyTester
                         for (int i = 0; i < backtestResults.Count; i++)
                         {
                             var result = backtestResults[i];
-                            var paramKey = parameterKeys[i % strategies.Count];
-                            var paramInstance = parameterInstances[i % strategies.Count];
+                            var paramKey = parameterKeys[i];
 
                             // Track terminated strategies
                             if (result.TerminatedEarly)
@@ -309,15 +318,13 @@ public class StrategyTester
                             else if (result.WinRate > 0.50 && result.NetProfit > 0)
                             {
                                 Interlocked.Increment(ref successfulCount);
-                                // Create a composite key that includes the parameter config, risk, and max trades
-                                string compositeKey = $"{paramKey}_R{result.RiskPercentage}_C{result.MaxConcurrentTrades}";
-                                if (!Results.TryAdd(compositeKey, (paramInstance, result)))
+                                if (!Results.TryAdd(paramKey, (parameterInstances[i], result)))
                                 {
                                     // It's a duplicate - check if the new result is better
-                                    if (result.NetProfit > Results[compositeKey].Result.NetProfit)
+                                    if (result.NetProfit > Results[paramKey].Result.NetProfit)
                                     {
                                         // Replace with better result
-                                        Results[compositeKey] = (paramInstance, result);
+                                        Results[paramKey] = (parameterInstances[i], result);
                                     }
                                     Interlocked.Increment(ref duplicateCount);
                                 }
@@ -328,8 +335,8 @@ public class StrategyTester
                             }
                         }
 
-                        // Update the processed combinations counter to include all parameter variations
-                        Interlocked.Add(ref currentCombinationIndex, strategies.Count * totalVariationsPerStrategy);
+                        // Increment the processed combinations counter
+                        Interlocked.Add(ref currentCombinationIndex, backtestResults.Count);
                     }
                     catch (Exception ex)
                     {
@@ -344,6 +351,9 @@ public class StrategyTester
         }
     }
 
+    /// <summary>
+    /// Trims the results collection to keep only the top 10 items by net profit
+    /// </summary>
     private void TrimResultsToTop10()
     {
         // Skip trimming if we have fewer than 10 results
@@ -371,7 +381,7 @@ public class StrategyTester
 
         foreach (var result in groupedResults)
         {
-            var key = $"{IndicatorCollection.GenerateParameterKey(result.Params)}_R{result.Result.RiskPercentage}_C{result.Result.MaxConcurrentTrades}";
+            var key = IndicatorCollection.GenerateParameterKey(result.Params);
             newResults.TryAdd(key, result);
         }
 
@@ -383,13 +393,19 @@ public class StrategyTester
         }
     }
 
+    /// <summary>
+    /// Generates a filename for saving results based on strategy, timeframe, risk, and concurrent trades
+    /// </summary>
     private string GenerateResultFilename()
     {
         // Format: StrategyName_LookbackDays_TimeFrame_RiskPercentage_MaxConcurrentTrades.json
-        string fileName = $"{strategyName}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}_{string.Join("_", backtestOptions.RiskPercentage)}R_{string.Join("_", backtestOptions.MaxConcurrentTrades)}C.json";
+        string fileName = $"{strategyName}_{backtestOptions.LookbackDays}days_{backtestOptions.TimeFrame}_{backtestOptions.RiskPercentage}R_{backtestOptions.MaxConcurrentTrades}C.json";
         return fileName;
     }
 
+    /// <summary>
+    /// Saves top 10 results to a JSON file
+    /// </summary>
     private void SaveTopResults()
     {
         try
@@ -481,6 +497,9 @@ public class StrategyTester
         }
     }
 
+    /// <summary>
+    /// Updates the progress display at fixed intervals
+    /// </summary>
     private void UpdateProgressDisplay()
     {
         int progressBarWidth = 50;
@@ -525,6 +544,11 @@ public class StrategyTester
         Console.WriteLine();  // End the progress line
     }
 
+    /// <summary>
+    /// Load test results from a JSON file and convert them to IndicatorCollections
+    /// </summary>
+    /// <param name="filename">Optional specific filename to load. If not provided, uses the current configuration filename.</param>
+    /// <returns>List of IndicatorCollection objects loaded from the file</returns>
     public IndicatorCollection LoadFromJson(string? filename = null)
     {
         // Use the standard filename format if none provided
@@ -575,6 +599,9 @@ public class StrategyTester
         }
     }
 
+    /// <summary>
+    /// Display final statistics and top results
+    /// </summary>
     private void ShowFinalStats()
     {
         Console.WriteLine("\nOptimization Complete!");
@@ -674,9 +701,7 @@ public class StrategyTester
             var result = topResults[i];
             Console.WriteLine($"{i + 1}. Net Profit: ${result.Result.NetProfit:F2}, " +
                              $"Win Rate: {result.Result.WinRate:P2}, " +
-                             $"Trades: {result.Result.TotalTrades}, " +
-                             $"Risk: {result.Result.RiskPercentage}%, " +
-                             $"Max Trades: {result.Result.MaxConcurrentTrades}");
+                             $"Trades: {result.Result.TotalTrades}");
         }
 
         // Save the top results to a file

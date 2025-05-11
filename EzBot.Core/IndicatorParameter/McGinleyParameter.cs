@@ -5,10 +5,10 @@ public class McGinleyParameter : IndicatorParameterBase
     private int _period = 14;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (5, 50);
+    private static readonly (int Min, int Max) PeriodRange = (10, 100);
 
     // Steps
-    private const int PeriodRangeStep = 5;
+    private const int PeriodRangeStep = 10;
 
     // Calculate permutations
     private static readonly int PeriodPermutations = CalculateSteps(PeriodRange.Min, PeriodRange.Max, PeriodRangeStep);

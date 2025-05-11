@@ -8,13 +8,13 @@ public class NormalizedVolumeParameter : IndicatorParameterBase
     private int _normalHighVolumeRange = 100;
 
     // Ranges
-    private static readonly (int Min, int Max) VolumePeriodRange = (10, 30);
-    private static readonly (int Min, int Max) HighVolumeRange = (70, 90);
-    private static readonly (int Min, int Max) LowVolumeRange = (70, 90);
-    private static readonly (int Min, int Max) NormalHighVolumeRangeRange = (70, 90);
+    private static readonly (int Min, int Max) VolumePeriodRange = (50, 100);
+    private static readonly (int Min, int Max) HighVolumeRange = (100, 150);
+    private static readonly (int Min, int Max) LowVolumeRange = (75, 75);
+    private static readonly (int Min, int Max) NormalHighVolumeRangeRange = (75, 75);
 
     // Steps
-    private const int VolumePeriodRangeStep = 10;
+    private const int VolumePeriodRangeStep = 50;
     private const int HighVolumeRangeStep = 10;
     private const int LowVolumeRangeStep = 10;
     private const int NormalHighVolumeRangeRangeStep = 10;

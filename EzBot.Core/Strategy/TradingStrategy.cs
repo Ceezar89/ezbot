@@ -15,6 +15,7 @@ public class TradingStrategy(IndicatorCollection indicators) : ITradingStrategy
         _indicators.UpdateAll(bars);
         _signals.Clear();
 
+        // Process indicators and update signals
         foreach (var indicator in _indicators)
         {
             switch (indicator)
@@ -48,6 +49,7 @@ public class TradingStrategy(IndicatorCollection indicators) : ITradingStrategy
         {
             return new TradeOrder(TradeType.Short, _signals.ShortStopLoss, _signals.ShortTakeProfit);
         }
+
         return new TradeOrder(TradeType.None, double.NaN, double.NaN);
     }
 }
