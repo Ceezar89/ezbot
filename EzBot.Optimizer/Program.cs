@@ -10,24 +10,52 @@ List<StrategyConfiguration> strategyConfigurations = [];
 // Add your strategy configurations here
 strategyConfigurations.Add(new StrategyConfiguration([
     IndicatorType.Etma,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi,
     IndicatorType.Trendilo
 ]));
 
 strategyConfigurations.Add(new StrategyConfiguration([
     IndicatorType.McGinley,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi,
     IndicatorType.Trendilo
 ]));
 
-List<TimeFrame> timeFrames = [TimeFrame.OneHour, TimeFrame.ThirtyMinute, TimeFrame.FifteenMinute];
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.Etma,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Trendilo
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.McGinley,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Trendilo
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.Etma,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi
+]));
+
+strategyConfigurations.Add(new StrategyConfiguration([
+    IndicatorType.McGinley,
+    IndicatorType.NormalizedVolume,
+    IndicatorType.Lwpi
+]));
+
+List<TimeFrame> timeFrames = [TimeFrame.OneHour];
 List<double> riskPercentages = [1.0, 2.0, 3.0];
-List<int> maxConcurrentTrades = [1, 2, 3];
+List<int> maxConcurrentTrades = [1, 2, 3, 4, 5];
 
 double initialBalance = 1000;
 double feePercentage = 0.05;
 double maxDrawdown = 0.3;
 int lookbackDays = 1500;
 int leverage = 10;
-int threadCount = 0;
+int threadCount = -1;
 bool runSavedConfiguration = false;
 double maxInactivityPercentage = 0.05;
 
@@ -80,6 +108,8 @@ if (args.Length > 0)
     }
 }
 
+int totalProgressCount = strategyConfigurations.Count * riskPercentages.Count * timeFrames.Count * maxConcurrentTrades.Count;
+int currentProgress = 0;
 
 try
 {
@@ -91,6 +121,11 @@ try
             {
                 foreach (var strategyConfiguration in strategyConfigurations)
                 {
+                    // Print total progress count
+                    Console.WriteLine($"================================================");
+                    Console.WriteLine($"Current progress: {++currentProgress}/{totalProgressCount}");
+                    Console.WriteLine($"================================================");
+
                     var tester = new StrategyTester(
                         dataFilePath: dataFilePath,
                         strategyConfiguration: strategyConfiguration,

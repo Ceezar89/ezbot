@@ -35,17 +35,17 @@ public class TradingStrategy(IndicatorCollection indicators) : ITradingStrategy
             }
         }
 
-        // If we have volume signals but they're not all high, don't trade
-        if (_signals.HasVolumeSignals && !_signals.AllVolumeHigh)
-        {
-            return new TradeOrder(TradeType.None, double.NaN, double.NaN);
-        }
-        // Standard trend-following logic
-        else if (_signals.AllTrendsBullish)
+        bool hasVolumeSignals = _signals.HasVolumeSignals;
+        bool allVolumeHigh = _signals.AllVolumeHigh;
+        bool allTrendsBullish = _signals.AllTrendsBullish;
+        bool allTrendsBearish = _signals.AllTrendsBearish;
+
+        // Trade only when trends are aligned and volume confirms (if volume signals exist)
+        if (allTrendsBullish && (!hasVolumeSignals || allVolumeHigh))
         {
             return new TradeOrder(TradeType.Long, _signals.LongStopLoss, _signals.LongTakeProfit);
         }
-        else if (_signals.AllTrendsBearish)
+        else if (allTrendsBearish && (!hasVolumeSignals || allVolumeHigh))
         {
             return new TradeOrder(TradeType.Short, _signals.ShortStopLoss, _signals.ShortTakeProfit);
         }

@@ -8,11 +8,11 @@ public class EtmaParameter : IndicatorParameterBase
     private SignalStrength _signalStrength = SignalStrength.VeryStrong;
 
     // Ranges
-    private static readonly (int Min, int Max) LengthRange = (5, 50);
+    private static readonly (int Min, int Max) LengthRange = (10, 100);
     private static readonly (int Min, int Max) SignalStrengthRange = (0, 2);
 
     // Steps
-    private const int LengthRangeStep = 5;
+    private const int LengthRangeStep = 10;
     private const int SignalStrengthRangeStep = 1;
 
     // Correctly calculate the number of steps for each parameter range

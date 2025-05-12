@@ -9,11 +9,11 @@ public class TrendiloParameter : IndicatorParameterBase
     private double _bandMultiplier = 1.0;
 
     // Ranges
-    private static readonly (int Min, int Max) SmoothingRange = (1, 6);
-    private static readonly (int Min, int Max) LookbackRange = (50, 250);
-    private static readonly (double Min, double Max) AlmaOffsetRange = (0.8, 1.1);
-    private static readonly (int Min, int Max) AlmaSigmaRange = (1, 7);
-    private static readonly (double Min, double Max) BandMultiplierRange = (1.0, 2.0);
+    private static readonly (int Min, int Max) SmoothingRange = (1, 1);
+    private static readonly (int Min, int Max) LookbackRange = (50, 50);
+    private static readonly (double Min, double Max) AlmaOffsetRange = (0.85, 0.85);
+    private static readonly (int Min, int Max) AlmaSigmaRange = (6, 6);
+    private static readonly (double Min, double Max) BandMultiplierRange = (1.0, 1.0);
 
     // Steps
     private const int SmoothingRangeStep = 5;

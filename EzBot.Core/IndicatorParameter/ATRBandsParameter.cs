@@ -7,7 +7,7 @@ public class AtrBandsParameter : IndicatorParameterBase
     private double _riskRewardRatio = 1.1;
 
     // Ranges
-    private static readonly (int Min, int Max) PeriodRange = (12, 14);
+    private static readonly (int Min, int Max) PeriodRange = (12, 12);
     private static readonly (double Min, double Max) MultiplierRange = (2.0, 3.0);
     private static readonly (double Min, double Max) RiskRewardRatioRange = (1.1, 2.0);
 
